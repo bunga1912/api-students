@@ -1,0 +1,16 @@
+# Binary hasil build
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment
+.env
+
+# File OS/editor
+.DS_Store
+Thumbs.db
+
+# Folder VS Code (opsional)
+.vscode/
