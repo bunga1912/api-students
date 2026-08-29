@@ -9,6 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/joho/godotenv"
+
+	"api-students/database"
 )
 
 var metodeBerbody = map[string]bool{
@@ -30,8 +33,21 @@ func requireJSON(c *fiber.Ctx) error {
 }
 
 func main() {
+	// Muat kredensial dari .env. Bila berkas tidak ditemukan, program
+	// tetap lanjut — nilai bisa saja disuntikkan lewat environment
+	// variable sistem (misalnya saat deploy).
+	if err := godotenv.Load(); err != nil {
+		log.Println("peringatan: .env tidak ditemukan, membaca dari environment sistem")
+	}
+
+	pool, err := database.NewPostgresPool()
+	if err != nil {
+		log.Fatal("gagal terhubung ke database: ", err)
+	}
+	defer pool.Close()
+
 	app := fiber.New(fiber.Config{
-		AppName: "Tugas Mandiri Pertemuan 2 - API Students",
+		AppName: "Tugas Mandiri Pertemuan 3 - API Students",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			status := fiber.StatusInternalServerError
 			pesan := "terjadi kesalahan pada server"
@@ -52,7 +68,10 @@ func main() {
 	api := app.Group("/api/v1")
 
 	api.Get("/health", func(c *fiber.Ctx) error {
-		return ok(c, "server berjalan", fiber.Map{"status": "up"})
+		if err := pool.Ping(c.Context()); err != nil {
+			return fail(c, fiber.StatusServiceUnavailable, "database tidak dapat dijangkau")
+		}
+		return ok(c, "server dan database berjalan", fiber.Map{"status": "up"})
 	})
 
 	s := api.Group("/students", requireJSON)
