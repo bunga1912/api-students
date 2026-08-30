@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/joho/godotenv"
 
+	"api-students/app/repository"
 	"api-students/database"
 )
 
@@ -45,6 +46,8 @@ func main() {
 		log.Fatal("gagal terhubung ke database: ", err)
 	}
 	defer pool.Close()
+
+	repo = repository.NewStudentRepository(pool)
 
 	app := fiber.New(fiber.Config{
 		AppName: "Tugas Mandiri Pertemuan 3 - API Students",
