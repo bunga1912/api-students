@@ -8,6 +8,9 @@
 # Environment
 .env
 
+# Log output
+logs/
+
 # File OS/editor
 .DS_Store
 Thumbs.db
