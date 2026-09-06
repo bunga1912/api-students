@@ -44,3 +44,11 @@ Response daftar menambahkan `meta`, response gagal menggunakan `success: false` 
 ## Catatan Batas Limit
 
 Batas atas `limit` ditetapkan **50** karena data mahasiswa dalam satu daftar kelas/angkatan secara realistis tidak akan mencapai ratusan atau ribuan baris sekaligus, sehingga batas ini cukup longgar untuk pemakaian wajar namun tetap mencegah klien meminta seluruh data sekaligus dan membebani server.
+
+## Struktur Proyek
+
+Proyek ini mengikuti struktur Clean Architecture (4 layer):
+- `app/model/` — entities
+- `app/service/` — business rules & use cases
+- `app/repository/` — akses data
+- `helper/`, `middleware/`, `route/`, `config/`, `database/` — interface adapters & infrastruktur
