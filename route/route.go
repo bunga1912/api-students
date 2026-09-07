@@ -16,7 +16,10 @@ import (
 //
 // Perhatikan isi file ini: tidak ada logika bisnis, tidak ada query,
 // tidak ada validasi. Hanya daftar alamat dan siapa yang melayaninya.
-func Register(app *fiber.App, pool *pgxpool.Pool, studentService *service.StudentService) {
+func Register(
+	app *fiber.App, pool *pgxpool.Pool,
+	studentService *service.StudentService, nilaiService *service.NilaiService,
+) {
 	api := app.Group("/api/v1")
 
 	api.Get("/health", healthCheck(pool))
@@ -28,6 +31,8 @@ func Register(app *fiber.App, pool *pgxpool.Pool, studentService *service.Studen
 	students.Put("/:id", studentService.Replace)
 	students.Patch("/:id", studentService.Patch)
 	students.Delete("/:id", studentService.Delete)
+
+	students.Get("/:nim/nilai", nilaiService.GetByNIM)
 }
 
 // healthCheck melaporkan kondisi layanan beserta databasenya.

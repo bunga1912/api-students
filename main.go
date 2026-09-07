@@ -29,8 +29,11 @@ func main() {
 	studentRepo := repository.NewStudentRepository(pool)
 	studentService := service.NewStudentService(studentRepo)
 
+	nilaiRepo := repository.NewNilaiRepository(pool)
+	nilaiService := service.NewNilaiService(nilaiRepo)
+
 	// 4. Aplikasi
-	app := config.NewApp(logger, pool, studentService)
+	app := config.NewApp(logger, pool, studentService, nilaiService)
 
 	port := config.GetEnv("APP_PORT", "8000")
 	logger.Info("server berjalan", slog.String("port", port))
