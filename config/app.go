@@ -15,14 +15,16 @@ import (
 func NewApp(
 	logger *slog.Logger, pool *pgxpool.Pool,
 	studentService *service.StudentService, nilaiService *service.NilaiService,
+	authService *service.AuthService, jwtManager *helper.JWTManager,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      GetEnv("APP_NAME", "Tugas Mandiri - API Students"),
 		ErrorHandler: newErrorHandler(logger),
+		BodyLimit:    1 * 1024 * 1024, // 1 MB — mencegah body raksasa menghabiskan memori
 	})
 
 	middleware.Register(app, logger)
-	route.Register(app, pool, studentService, nilaiService)
+	route.Register(app, pool, studentService, nilaiService, authService, jwtManager)
 
 	app.Use(func(c *fiber.Ctx) error {
 		return helper.Fail(c, fiber.StatusNotFound, "endpoint tidak ditemukan")

@@ -12,19 +12,26 @@ import (
 	"api-students/middleware"
 )
 
-// Register memetakan URL ke method pada service.
-//
-// Perhatikan isi file ini: tidak ada logika bisnis, tidak ada query,
-// tidak ada validasi. Hanya daftar alamat dan siapa yang melayaninya.
 func Register(
 	app *fiber.App, pool *pgxpool.Pool,
 	studentService *service.StudentService, nilaiService *service.NilaiService,
+	authService *service.AuthService, jwtManager *helper.JWTManager,
 ) {
 	api := app.Group("/api/v1")
 
 	api.Get("/health", healthCheck(pool))
 
-	students := api.Group("/students", middleware.RequireJSON)
+	// --- autentikasi (publik, kecuali /me) ---
+	auth := api.Group("/auth", middleware.RequireJSON)
+	auth.Post("/register", authService.Register)
+	auth.Post("/login", middleware.LoginRateLimiter(), authService.Login)
+	auth.Post("/refresh", authService.Refresh)
+	auth.Post("/logout", authService.Logout)
+	auth.Get("/me", middleware.RequireAuth(jwtManager), authService.Me)
+
+	// --- wajib membawa access token ---
+	students := api.Group("/students",
+		middleware.RequireJSON, middleware.RequireAuth(jwtManager))
 	students.Get("/", studentService.List)
 	students.Get("/:id", studentService.Get)
 	students.Post("/", studentService.Create)
@@ -35,7 +42,6 @@ func Register(
 	students.Get("/:nim/nilai", nilaiService.GetByNIM)
 }
 
-// healthCheck melaporkan kondisi layanan beserta databasenya.
 func healthCheck(pool *pgxpool.Pool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(c.UserContext(), 2*time.Second)
