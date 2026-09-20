@@ -8,16 +8,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Sentinel error — dipakai handler untuk memetakan ke status HTTP yang tepat.
 var (
 	ErrNotFound  = errors.New("data tidak ditemukan")
 	ErrDuplicate = errors.New("nim sudah terdaftar")
 )
 
-// StudentRepository adalah kontrak akses data mahasiswa.
-// Handler bergantung pada interface ini, bukan pada implementasi
-// PostgreSQL secara langsung, sehingga sumber data dapat diganti
-// tanpa mengubah kode handler.
 type StudentRepository interface {
 	FindAll(ctx context.Context, q StudentListFilter) ([]Student, int, error)
 	FindByID(ctx context.Context, id int) (Student, error)
@@ -26,15 +21,13 @@ type StudentRepository interface {
 	Delete(ctx context.Context, id int) error
 }
 
-// Student di sini adalah representasi data pada lapisan repository.
-// Sengaja dipisah dari struct Student pada model.go agar lapisan
-// repository tidak bergantung pada detail JSON tag milik lapisan HTTP.
 type Student struct {
 	ID       int
 	NIM      string
 	Name     string
 	Grade    float64
 	IsActive bool
+	OwnerID  *int
 }
 
 type StudentListFilter struct {
@@ -50,17 +43,13 @@ type postgresStudentRepository struct {
 	db *pgxpool.Pool
 }
 
-// NewStudentRepository mengembalikan implementasi StudentRepository
-// yang menyimpan datanya di PostgreSQL.
 func NewStudentRepository(db *pgxpool.Pool) StudentRepository {
 	return &postgresStudentRepository{db: db}
 }
 
 func (r *postgresStudentRepository) FindAll(ctx context.Context, f StudentListFilter) ([]Student, int, error) {
-	// Daftar putih kolom sort divalidasi di lapisan handler/helper,
-	// di sini kolomnya sudah dipastikan aman untuk ditempel ke query.
 	query := `
-		SELECT id, nim, name, grade, is_active
+		SELECT id, nim, name, grade, is_active, owner_id
 		FROM students
 		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%')
 		  AND ($2::boolean IS NULL OR is_active = $2)
@@ -78,7 +67,7 @@ func (r *postgresStudentRepository) FindAll(ctx context.Context, f StudentListFi
 	var hasil []Student
 	for rows.Next() {
 		var s Student
-		if err := rows.Scan(&s.ID, &s.NIM, &s.Name, &s.Grade, &s.IsActive); err != nil {
+		if err := rows.Scan(&s.ID, &s.NIM, &s.Name, &s.Grade, &s.IsActive, &s.OwnerID); err != nil {
 			return nil, 0, err
 		}
 		hasil = append(hasil, s)
@@ -101,10 +90,11 @@ func (r *postgresStudentRepository) FindAll(ctx context.Context, f StudentListFi
 }
 
 func (r *postgresStudentRepository) FindByID(ctx context.Context, id int) (Student, error) {
-	query := `SELECT id, nim, name, grade, is_active FROM students WHERE id = $1`
+	query := `SELECT id, nim, name, grade, is_active, owner_id FROM students WHERE id = $1`
 
 	var s Student
-	err := r.db.QueryRow(ctx, query, id).Scan(&s.ID, &s.NIM, &s.Name, &s.Grade, &s.IsActive)
+	err := r.db.QueryRow(ctx, query, id).
+		Scan(&s.ID, &s.NIM, &s.Name, &s.Grade, &s.IsActive, &s.OwnerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Student{}, ErrNotFound
 	}
@@ -114,15 +104,19 @@ func (r *postgresStudentRepository) FindByID(ctx context.Context, id int) (Stude
 	return s, nil
 }
 
+// Create menyimpan owner_id sesuai yang dikirim service. Owner_id TIDAK
+// pernah berasal dari body request klien — ia diambil dari identitas
+// pemanggil (lihat student_service.go), sehingga klien tidak mungkin
+// mengaku sebagai pemilik user lain.
 func (r *postgresStudentRepository) Create(ctx context.Context, s Student) (Student, error) {
 	query := `
-		INSERT INTO students (nim, name, grade, is_active)
-		VALUES ($1, $2, $3, true)
-		RETURNING id, nim, name, grade, is_active
+		INSERT INTO students (nim, name, grade, is_active, owner_id)
+		VALUES ($1, $2, $3, true, $4)
+		RETURNING id, nim, name, grade, is_active, owner_id
 	`
 	var hasil Student
-	err := r.db.QueryRow(ctx, query, s.NIM, s.Name, s.Grade).
-		Scan(&hasil.ID, &hasil.NIM, &hasil.Name, &hasil.Grade, &hasil.IsActive)
+	err := r.db.QueryRow(ctx, query, s.NIM, s.Name, s.Grade, s.OwnerID).
+		Scan(&hasil.ID, &hasil.NIM, &hasil.Name, &hasil.Grade, &hasil.IsActive, &hasil.OwnerID)
 
 	if isUniqueViolation(err) {
 		return Student{}, ErrDuplicate
@@ -138,11 +132,11 @@ func (r *postgresStudentRepository) Update(ctx context.Context, s Student) (Stud
 		UPDATE students
 		SET nim = $1, name = $2, grade = $3, is_active = $4
 		WHERE id = $5
-		RETURNING id, nim, name, grade, is_active
+		RETURNING id, nim, name, grade, is_active, owner_id
 	`
 	var hasil Student
 	err := r.db.QueryRow(ctx, query, s.NIM, s.Name, s.Grade, s.IsActive, s.ID).
-		Scan(&hasil.ID, &hasil.NIM, &hasil.Name, &hasil.Grade, &hasil.IsActive)
+		Scan(&hasil.ID, &hasil.NIM, &hasil.Name, &hasil.Grade, &hasil.IsActive, &hasil.OwnerID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Student{}, ErrNotFound

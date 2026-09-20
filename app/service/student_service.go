@@ -12,8 +12,6 @@ import (
 	"api-students/helper"
 )
 
-// StudentService memegang dua peran sekaligus (controller + orkestrasi),
-// sama seperti UserService pada modul.
 type StudentService struct {
 	repo  repository.StudentRepository
 	perms *helper.PermissionSet
@@ -23,10 +21,10 @@ func NewStudentService(repo repository.StudentRepository, perms *helper.Permissi
 	return &StudentService{repo: repo, perms: perms}
 }
 
-// toModel menerjemahkan representasi repository ke representasi keluar.
 func toModel(s repository.Student) model.Student {
 	return model.Student{
-		ID: s.ID, NIM: s.NIM, Name: s.Name, Grade: s.Grade, IsActive: s.IsActive,
+		ID: s.ID, NIM: s.NIM, Name: s.Name, Grade: s.Grade,
+		IsActive: s.IsActive, OwnerID: s.OwnerID,
 	}
 }
 
@@ -54,6 +52,9 @@ func (s *StudentService) List(c *fiber.Ctx) error {
 	})
 }
 
+// Get memeriksa kepemilikan SETELAH data diambil, karena baru pada titik
+// itu owner_id-nya diketahui. Ini sebabnya pemeriksaan seperti ini tidak
+// bisa dipindah ke middleware: middleware belum pernah menyentuh database.
 func (s *StudentService) Get(c *fiber.Ctx) error {
 	id, valid := helper.ParamID(c)
 	if !valid {
@@ -67,9 +68,25 @@ func (s *StudentService) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return helper.Fail(c, fiber.StatusServiceUnavailable, "database tidak dapat dijangkau")
 	}
+
+	authUser, ok := helper.CurrentUser(c)
+	if !ok {
+		return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+	}
+
+	hasAny := s.perms.Can(authUser.Role, "student:read:any")
+	if !CanAccessStudent(authUser.UserID, item.OwnerID, hasAny) {
+		return helper.Fail(c, fiber.StatusForbidden,
+			"anda tidak memiliki hak untuk mengakses data ini")
+	}
+
 	return helper.Success(c, fiber.StatusOK, "mahasiswa ditemukan", toModel(item))
 }
 
+// Create mengisi owner_id dari identitas pemanggil, BUKAN dari body
+// request. Bila klien mengirim "owner_id" di body, nilainya diabaikan
+// begitu saja karena CreateStudentRequest tidak memiliki field itu —
+// pola yang sama seperti pencegahan mass assignment pada role di Modul 5.
 func (s *StudentService) Create(c *fiber.Ctx) error {
 	var req model.CreateStudentRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -82,8 +99,14 @@ func (s *StudentService) Create(c *fiber.Ctx) error {
 		return helper.FailValidation(c, errs)
 	}
 
+	authUser, ok := helper.CurrentUser(c)
+	if !ok {
+		return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+	}
+	ownerID := authUser.UserID
+
 	baru, err := s.repo.Create(c.Context(), repository.Student{
-		NIM: req.NIM, Name: req.Name, Grade: req.Grade,
+		NIM: req.NIM, Name: req.Name, Grade: req.Grade, OwnerID: &ownerID,
 	})
 	if errors.Is(err, repository.ErrDuplicate) {
 		return helper.Fail(c, fiber.StatusConflict, "NIM sudah terdaftar")
@@ -100,6 +123,25 @@ func (s *StudentService) Replace(c *fiber.Ctx) error {
 	id, valid := helper.ParamID(c)
 	if !valid {
 		return helper.Fail(c, fiber.StatusBadRequest, "id harus berupa angka positif")
+	}
+
+	existing, err := s.repo.FindByID(c.Context(), id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return helper.Fail(c, fiber.StatusNotFound, "mahasiswa tidak ditemukan")
+	}
+	if err != nil {
+		return helper.Fail(c, fiber.StatusServiceUnavailable, "database tidak dapat dijangkau")
+	}
+
+	authUser, ok := helper.CurrentUser(c)
+	if !ok {
+		return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+	}
+
+	hasAny := s.perms.Can(authUser.Role, "student:update:any")
+	if !CanAccessStudent(authUser.UserID, existing.OwnerID, hasAny) {
+		return helper.Fail(c, fiber.StatusForbidden,
+			"anda tidak memiliki hak untuk mengubah data ini")
 	}
 
 	var req model.ReplaceStudentRequest
@@ -151,6 +193,17 @@ func (s *StudentService) Patch(c *fiber.Ctx) error {
 		return helper.Fail(c, fiber.StatusServiceUnavailable, "database tidak dapat dijangkau")
 	}
 
+	authUser, ok := helper.CurrentUser(c)
+	if !ok {
+		return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+	}
+
+	hasAny := s.perms.Can(authUser.Role, "student:update:any")
+	if !CanAccessStudent(authUser.UserID, existingRepo.OwnerID, hasAny) {
+		return helper.Fail(c, fiber.StatusForbidden,
+			"anda tidak memiliki hak untuk mengubah data ini")
+	}
+
 	updated, errs := ApplyPatch(toModel(existingRepo), req)
 	if len(errs) > 0 {
 		return helper.FailValidation(c, errs)
@@ -170,6 +223,11 @@ func (s *StudentService) Patch(c *fiber.Ctx) error {
 	return helper.Success(c, fiber.StatusOK, "mahasiswa berhasil diperbarui sebagian", toModel(hasil))
 }
 
+// Delete TIDAK memeriksa kepemilikan — haknya sudah diputuskan di
+// middleware lewat permission "student:delete" (lihat route.go),
+// karena penghapusan dianggap tindakan yang cukup berisiko sehingga
+// hanya boleh dilakukan oleh role yang eksplisit diberi izin, bukan
+// oleh pemilik data biasa.
 func (s *StudentService) Delete(c *fiber.Ctx) error {
 	id, valid := helper.ParamID(c)
 	if !valid {
