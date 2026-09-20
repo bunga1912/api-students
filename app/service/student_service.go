@@ -15,12 +15,12 @@ import (
 // StudentService memegang dua peran sekaligus (controller + orkestrasi),
 // sama seperti UserService pada modul.
 type StudentService struct {
-	repo repository.StudentRepository
+	repo  repository.StudentRepository
+	perms *helper.PermissionSet
 }
 
-// NewStudentService menerima INTERFACE, bukan koneksi database langsung.
-func NewStudentService(repo repository.StudentRepository) *StudentService {
-	return &StudentService{repo: repo}
+func NewStudentService(repo repository.StudentRepository, perms *helper.PermissionSet) *StudentService {
+	return &StudentService{repo: repo, perms: perms}
 }
 
 // toModel menerjemahkan representasi repository ke representasi keluar.

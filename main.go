@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -19,8 +20,6 @@ func main() {
 	config.LoadEnv()
 	logger := config.NewLogger()
 
-	// Rahasia diperiksa SEBELUM server menyala. Lebih baik gagal seketika
-	// daripada berjalan dengan token yang mudah dipalsukan.
 	jwtSecret := config.GetEnv("JWT_SECRET", "")
 	if len(jwtSecret) < minSecretLength {
 		logger.Error("JWT_SECRET tidak diisi atau terlalu pendek",
@@ -41,8 +40,18 @@ func main() {
 		time.Duration(mustAtoi(config.GetEnv("JWT_ACCESS_TTL_MINUTES", "15")))*time.Minute,
 	)
 
+	// Pemetaan role ke permission dibaca SEKALI saat aplikasi menyala.
+	roleRepo := repository.NewRoleRepository(pool)
+	rawPermissions, err := roleRepo.LoadPermissions(context.Background())
+	if err != nil {
+		logger.Error("gagal memuat permission", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	permissions := helper.NewPermissionSet(rawPermissions)
+	logger.Info("permission dimuat", slog.Any("roles", permissions.KnownRoles()))
+
 	studentRepo := repository.NewStudentRepository(pool)
-	studentService := service.NewStudentService(studentRepo)
+	studentService := service.NewStudentService(studentRepo, permissions)
 
 	nilaiRepo := repository.NewNilaiRepository(pool)
 	nilaiService := service.NewNilaiService(nilaiRepo)
@@ -50,11 +59,11 @@ func main() {
 	userRepo := repository.NewUserRepository(pool)
 	tokenRepo := repository.NewTokenRepository(pool)
 	authService := service.NewAuthService(
-		userRepo, tokenRepo, jwtManager,
+		userRepo, tokenRepo, jwtManager, permissions,
 		time.Duration(mustAtoi(config.GetEnv("JWT_REFRESH_TTL_DAYS", "7")))*24*time.Hour,
 	)
 
-	app := config.NewApp(logger, pool, studentService, nilaiService, authService, jwtManager)
+	app := config.NewApp(logger, pool, studentService, nilaiService, authService, jwtManager, permissions)
 
 	port := config.GetEnv("APP_PORT", "8000")
 	logger.Info("server berjalan", slog.String("port", port))
@@ -65,7 +74,7 @@ func mustAtoi(s string) int {
 	n := 0
 	for _, r := range s {
 		if r < '0' || r > '9' {
-			return 15 // fallback aman bila env var rusak
+			return 15
 		}
 		n = n*10 + int(r-'0')
 	}

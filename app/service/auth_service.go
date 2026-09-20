@@ -20,6 +20,7 @@ type AuthService struct {
 	users      repository.UserRepository
 	tokens     repository.TokenRepository
 	jwt        *helper.JWTManager
+	perms      *helper.PermissionSet
 	refreshTTL time.Duration
 }
 
@@ -27,11 +28,14 @@ func NewAuthService(
 	users repository.UserRepository,
 	tokens repository.TokenRepository,
 	jwtManager *helper.JWTManager,
+	perms *helper.PermissionSet,
 	refreshTTL time.Duration,
 ) *AuthService {
-	return &AuthService{users: users, tokens: tokens, jwt: jwtManager, refreshTTL: refreshTTL}
+	return &AuthService{
+		users: users, tokens: tokens, jwt: jwtManager,
+		perms: perms, refreshTTL: refreshTTL,
+	}
 }
-
 func (s *AuthService) Register(c *fiber.Ctx) error {
 	var req model.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {

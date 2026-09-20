@@ -16,6 +16,7 @@ func Register(
 	app *fiber.App, pool *pgxpool.Pool,
 	studentService *service.StudentService, nilaiService *service.NilaiService,
 	authService *service.AuthService, jwtManager *helper.JWTManager,
+	permissions *helper.PermissionSet,
 ) {
 	api := app.Group("/api/v1")
 
@@ -29,15 +30,25 @@ func Register(
 	auth.Post("/logout", authService.Logout)
 	auth.Get("/me", middleware.RequireAuth(jwtManager), authService.Me)
 
-	// --- wajib membawa access token ---
+	// --- wajib login, hak akses diperiksa per endpoint ---
 	students := api.Group("/students",
 		middleware.RequireJSON, middleware.RequireAuth(jwtManager))
-	students.Get("/", studentService.List)
+
+	// Hak dapat diputuskan TANPA melihat data -> middleware.
+	students.Get("/",
+		middleware.RequirePermission(permissions, "student:list"),
+		studentService.List)
+	students.Post("/",
+		middleware.RequirePermission(permissions, "student:create"),
+		studentService.Create)
+	students.Delete("/:id",
+		middleware.RequirePermission(permissions, "student:delete"),
+		studentService.Delete)
+
+	// Hak bergantung pada KEPEMILIKAN data -> diperiksa di service.
 	students.Get("/:id", studentService.Get)
-	students.Post("/", studentService.Create)
 	students.Put("/:id", studentService.Replace)
 	students.Patch("/:id", studentService.Patch)
-	students.Delete("/:id", studentService.Delete)
 
 	students.Get("/:nim/nilai", nilaiService.GetByNIM)
 }

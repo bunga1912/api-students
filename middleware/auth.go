@@ -34,6 +34,48 @@ func RequireAuth(jwtManager *helper.JWTManager) fiber.Handler {
 		return c.Next()
 	}
 }
+// RequirePermission menolak request bila role pemanggil tidak memiliki
+// permission yang diminta. Dipasang SETELAH RequireAuth, sehingga
+// identitas pengguna sudah tersedia di Locals.
+func RequirePermission(perms *helper.PermissionSet, permission string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		authUser, ok := helper.CurrentUser(c)
+		if !ok {
+			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+		}
+
+		if !perms.Can(authUser.Role, permission) {
+			return helper.Fail(c, fiber.StatusForbidden,
+				"anda tidak memiliki hak untuk mengakses sumber daya ini")
+		}
+
+		return c.Next()
+	}
+}
+
+// RequireRole menolak request bila role pemanggil bukan salah satu
+// dari yang diizinkan. Dipakai untuk endpoint yang haknya ditentukan
+// langsung oleh role, bukan oleh permission granular.
+func RequireRole(allowed ...string) fiber.Handler {
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, role := range allowed {
+		allowedSet[role] = struct{}{}
+	}
+
+	return func(c *fiber.Ctx) error {
+		authUser, ok := helper.CurrentUser(c)
+		if !ok {
+			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+		}
+
+		if _, ok := allowedSet[authUser.Role]; !ok {
+			return helper.Fail(c, fiber.StatusForbidden,
+				"anda tidak memiliki hak untuk mengakses sumber daya ini")
+		}
+
+		return c.Next()
+	}
+}
 
 func bearerToken(c *fiber.Ctx) (string, error) {
 	header := c.Get(fiber.HeaderAuthorization)
