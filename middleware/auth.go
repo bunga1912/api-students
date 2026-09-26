@@ -16,8 +16,7 @@ func RequireAuth(jwtManager *helper.JWTManager) fiber.Handler {
 		token, err := bearerToken(c)
 		if err != nil {
 			c.Set("WWW-Authenticate", `Bearer realm="api"`)
-			return helper.Fail(c, fiber.StatusUnauthorized,
-				"header Authorization tidak ada atau salah bentuk")
+			return helper.Unauthorized("header Authorization tidak ada atau salah bentuk")
 		}
 
 		authUser, err := jwtManager.Parse(token)
@@ -25,15 +24,16 @@ func RequireAuth(jwtManager *helper.JWTManager) fiber.Handler {
 			c.Set("WWW-Authenticate", `Bearer realm="api"`)
 
 			if errors.Is(err, helper.ErrExpiredToken) {
-				return helper.Fail(c, fiber.StatusUnauthorized, "access token kedaluwarsa")
+				return helper.Unauthorized("access token kedaluwarsa")
 			}
-			return helper.Fail(c, fiber.StatusUnauthorized, "access token tidak valid")
+			return helper.Unauthorized("access token tidak valid")
 		}
 
 		c.Locals(helper.LocalsAuthUser, authUser)
 		return c.Next()
 	}
 }
+
 // RequirePermission menolak request bila role pemanggil tidak memiliki
 // permission yang diminta. Dipasang SETELAH RequireAuth, sehingga
 // identitas pengguna sudah tersedia di Locals.
@@ -41,12 +41,11 @@ func RequirePermission(perms *helper.PermissionSet, permission string) fiber.Han
 	return func(c *fiber.Ctx) error {
 		authUser, ok := helper.CurrentUser(c)
 		if !ok {
-			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+			return helper.Unauthorized("belum terautentikasi")
 		}
 
 		if !perms.Can(authUser.Role, permission) {
-			return helper.Fail(c, fiber.StatusForbidden,
-				"anda tidak memiliki hak untuk mengakses sumber daya ini")
+			return helper.Forbidden("anda tidak memiliki hak untuk mengakses sumber daya ini")
 		}
 
 		return c.Next()
@@ -65,12 +64,11 @@ func RequireRole(allowed ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authUser, ok := helper.CurrentUser(c)
 		if !ok {
-			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+			return helper.Unauthorized("belum terautentikasi")
 		}
 
 		if _, ok := allowedSet[authUser.Role]; !ok {
-			return helper.Fail(c, fiber.StatusForbidden,
-				"anda tidak memiliki hak untuk mengakses sumber daya ini")
+			return helper.Forbidden("anda tidak memiliki hak untuk mengakses sumber daya ini")
 		}
 
 		return c.Next()
@@ -108,8 +106,7 @@ func LoginRateLimiter() fiber.Handler {
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			c.Set("Retry-After", "60")
-			return helper.Fail(c, fiber.StatusTooManyRequests,
-				"terlalu banyak percobaan login, coba lagi dalam satu menit")
+			return helper.TooManyRequests("terlalu banyak percobaan login, coba lagi dalam satu menit")
 		},
 	})
 }

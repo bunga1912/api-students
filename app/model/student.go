@@ -11,25 +11,27 @@ type Student struct {
 
 // POST — semua field wajib
 type CreateStudentRequest struct {
-	NIM   string  `json:"nim"`
-	Name  string  `json:"name"`
-	Grade float64 `json:"grade"`
+	NIM   string  `json:"nim" validate:"required"`
+	Name  string  `json:"name" validate:"required"`
+	Grade float64 `json:"grade" validate:"min=0,max=100"`
 }
 
 // PUT — ganti seluruh isi, field bertipe biasa dan semuanya wajib
 type ReplaceStudentRequest struct {
-	NIM      string  `json:"nim"`
-	Name     string  `json:"name"`
-	Grade    float64 `json:"grade"`
+	NIM      string  `json:"nim" validate:"required"`
+	Name     string  `json:"name" validate:"required"`
+	Grade    float64 `json:"grade" validate:"min=0,max=100"`
 	IsActive bool    `json:"is_active"`
 }
 
 // PATCH — ubah sebagian, field bertipe pointer supaya bisa dibedakan
-// antara "tidak dikirim" (nil) dan "dikirim bernilai kosong"
+// antara "tidak dikirim" (nil) dan "dikirim bernilai kosong".
+// omitnil dipakai, bukan omitempty, karena maksudnya adalah
+// "lewati hanya bila nil" — bukan "lewati bila kosong".
 type PatchStudentRequest struct {
-	NIM      *string  `json:"nim,omitempty"`
-	Name     *string  `json:"name,omitempty"`
-	Grade    *float64 `json:"grade,omitempty"`
+	NIM      *string  `json:"nim,omitempty" validate:"omitnil,min=1"`
+	Name     *string  `json:"name,omitempty" validate:"omitnil,min=1"`
+	Grade    *float64 `json:"grade,omitempty" validate:"omitnil,min=0,max=100"`
 	IsActive *bool    `json:"is_active,omitempty"`
 }
 

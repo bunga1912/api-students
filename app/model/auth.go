@@ -3,15 +3,15 @@ package model
 import "time"
 
 type RegisterRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username string `json:"username" validate:"required,min=3,max=30,username"`
+	Email    string `json:"email" validate:"required,email,max=120"`
+	Password string `json:"password" validate:"required,max=72,strongpassword"`
 	// Tidak ada field Role — mencegah mass assignment lewat request.
 }
 
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type RefreshRequest struct {
@@ -25,8 +25,6 @@ type TokenPair struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-// RefreshToken adalah row pada tabel refresh_tokens.
-// Perhatikan: yang disimpan TokenHash, bukan tokennya sendiri.
 type RefreshToken struct {
 	ID        int64
 	UserID    int
@@ -36,8 +34,6 @@ type RefreshToken struct {
 	CreatedAt time.Time
 }
 
-// AuthUser adalah identitas minimal yang dibawa access token,
-// disimpan di Locals agar bisa dibaca middleware/service tanpa query ulang.
 type AuthUser struct {
 	UserID   int    `json:"user_id"`
 	Username string `json:"username"`

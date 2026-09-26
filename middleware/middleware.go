@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -17,30 +18,46 @@ import (
 // Register memasang seluruh middleware yang berlaku untuk semua route.
 // URUTAN PENTING: middleware dieksekusi sesuai urutan pemasangan.
 func Register(app *fiber.App, logger *slog.Logger) {
-	app.Use(requestid.New())      // 1. beri setiap request satu ID unik
-	app.Use(recover.New())        // 2. tangkap panic agar server tidak mati
-	app.Use(helmet.New())         // 3. pasang header keamanan dasar
-	app.Use(cors.New())           // 4. atur Cross-Origin Resource Sharing
+	app.Use(requestid.New())       // 1. beri setiap request satu ID unik
+	app.Use(recover.New())         // 2. tangkap panic agar server tidak mati
+	app.Use(helmet.New())          // 3. pasang header keamanan dasar
+	app.Use(cors.New())            // 4. atur Cross-Origin Resource Sharing
 	app.Use(RequestLogger(logger)) // 5. catat setiap request
 }
 
 // RequestLogger mencatat setiap request ke log terstruktur.
-// Fungsi ini MENGEMBALIKAN fungsi (closure) — begitulah middleware
-// menerima dependensi (logger) dari luar.
 func RequestLogger(logger *slog.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
-		err := c.Next() // serahkan ke middleware/handler berikutnya
+		err := c.Next()
 
 		requestID, _ := c.Locals("requestid").(string)
-		logger.Info("http_request",
+
+		// Sejak handler mengembalikan error alih-alih menulis response
+		// sendiri, status pada c.Response() BELUM terisi ketika baris ini
+		// dijalankan: ErrorHandler baru berjalan setelah seluruh rangkaian
+		// middleware selesai. Tanpa koreksi di bawah, setiap kegagalan
+		// tercatat sebagai 200.
+		status := c.Response().StatusCode()
+		if err != nil {
+			var appErr *helper.AppError
+			if errors.As(err, &appErr) {
+				status = appErr.Status
+			} else {
+				status = fiber.StatusInternalServerError
+			}
+		}
+
+		attrs := []any{
 			slog.String("request_id", requestID),
 			slog.String("method", c.Method()),
 			slog.String("path", c.Path()),
-			slog.Int("status", c.Response().StatusCode()),
+			slog.Int("status", status),
 			slog.Duration("duration", time.Since(start)),
 			slog.String("ip", c.IP()),
-		)
+		}
+
+		logger.Info("http_request", attrs...)
 		return err
 	}
 }
@@ -52,13 +69,11 @@ var methodsWithBody = map[string]bool{
 }
 
 // RequireJSON menolak request berisi body yang Content-Type-nya bukan JSON.
-// Dipasang per grup route (di route.go), bukan global.
 func RequireJSON(c *fiber.Ctx) error {
 	if methodsWithBody[c.Method()] {
 		ct := c.Get("Content-Type")
 		if !strings.HasPrefix(ct, fiber.MIMEApplicationJSON) {
-			return helper.Fail(c, fiber.StatusUnsupportedMediaType,
-				"Content-Type harus application/json")
+			return helper.UnsupportedMediaType("Content-Type harus application/json")
 		}
 	}
 	return c.Next()

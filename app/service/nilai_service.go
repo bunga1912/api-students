@@ -19,16 +19,16 @@ func NewNilaiService(repo repository.NilaiRepository) *NilaiService {
 func (s *NilaiService) GetByNIM(c *fiber.Ctx) error {
 	nim := c.Params("nim")
 	if nim == "" {
-		return helper.Fail(c, fiber.StatusBadRequest, "nim wajib diisi")
+		return helper.BadRequest("nim wajib diisi")
 	}
 
 	data, err := s.repo.FindByNIM(c.Context(), nim)
 	if err != nil {
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal mengambil data nilai")
+		return helper.Internal(err)
 	}
 
 	if len(data) == 0 {
-		return helper.Fail(c, fiber.StatusNotFound, "data nilai tidak ditemukan untuk NIM ini")
+		return helper.NotFound("data nilai tidak ditemukan untuk NIM ini")
 	}
 
 	return helper.Success(c, fiber.StatusOK, "daftar nilai berhasil diambil", model.WebResponse{
