@@ -24,10 +24,6 @@ var allowedSort = map[string]bool{
 }
 
 // ParseListQuery membaca query string dan memberi nilai bawaan yang aman.
-// Batas atas limit ditetapkan 50: data mahasiswa realistis tidak akan
-// mencapai ratusan ribu baris dalam satu daftar kelas/angkatan, sehingga
-// batas ini cukup longgar untuk pemakaian wajar namun tetap mencegah
-// klien meminta seluruh data sekaligus dan membebani server.
 func ParseListQuery(c *fiber.Ctx) model.ListQuery {
 	q := model.ListQuery{
 		Page:   c.QueryInt("page", 1),
@@ -42,10 +38,10 @@ func ParseListQuery(c *fiber.Ctx) model.ListQuery {
 	if q.Limit < 1 {
 		q.Limit = 10
 	}
-	if q.Limit > 50 { // batas atas wajib ada
+	if q.Limit > 50 {
 		q.Limit = 50
 	}
-	if !allowedSort[q.Sort] { // daftar putih, bukan daftar hitam
+	if !allowedSort[q.Sort] {
 		q.Sort = "id"
 	}
 	if q.Order != "desc" {
@@ -57,4 +53,32 @@ func ParseListQuery(c *fiber.Ctx) model.ListQuery {
 		}
 	}
 	return q
+}
+
+// ParseCursorQuery membaca query string untuk endpoint yang memakai
+// pagination berbasis cursor. Batas atas limit sama seperti ParseListQuery.
+func ParseCursorQuery(c *fiber.Ctx) (model.CursorQuery, error) {
+	q := model.CursorQuery{
+		Limit:  c.QueryInt("limit", 10),
+		Search: strings.TrimSpace(c.Query("search")),
+	}
+	if q.Limit < 1 {
+		q.Limit = 10
+	}
+	if q.Limit > 50 {
+		q.Limit = 50
+	}
+	if raw := c.Query("is_active"); raw != "" {
+		if v, err := strconv.ParseBool(raw); err == nil {
+			q.IsActive = &v
+		}
+	}
+	if raw := c.Query("cursor"); raw != "" {
+		id, err := DecodeCursor(raw)
+		if err != nil {
+			return model.CursorQuery{}, err
+		}
+		q.After = &id
+	}
+	return q, nil
 }

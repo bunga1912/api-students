@@ -9,92 +9,6 @@ import (
 // Pengujian ini tidak menyalakan server, tidak menyentuh database,
 // dan tidak membuat fiber.Ctx — murni menguji fungsi Go biasa.
 
-func TestValidateCreate(t *testing.T) {
-	cases := []struct {
-		name    string
-		req     model.CreateStudentRequest
-		wantErr bool
-		field   string // field yang diharapkan error, kalau wantErr true
-	}{
-		{
-			name:    "valid",
-			req:     model.CreateStudentRequest{NIM: "2201001", Name: "Sari", Grade: 88.5},
-			wantErr: false,
-		},
-		{
-			name:    "nim kosong",
-			req:     model.CreateStudentRequest{NIM: "", Name: "Sari", Grade: 88.5},
-			wantErr: true,
-			field:   "nim",
-		},
-		{
-			name:    "name kosong",
-			req:     model.CreateStudentRequest{NIM: "2201001", Name: "  ", Grade: 88.5},
-			wantErr: true,
-			field:   "name",
-		},
-		{
-			name:    "grade di luar rentang",
-			req:     model.CreateStudentRequest{NIM: "2201001", Name: "Sari", Grade: 150},
-			wantErr: true,
-			field:   "grade",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			errs := ValidateCreate(tc.req)
-			if tc.wantErr && len(errs) == 0 {
-				t.Fatalf("harap ada error, tapi lolos validasi")
-			}
-			if !tc.wantErr && len(errs) != 0 {
-				t.Fatalf("tidak harap error, tapi dapat: %v", errs)
-			}
-			if tc.wantErr {
-				if _, ok := errs[tc.field]; !ok {
-					t.Errorf("harap error pada field %q, dapat: %v", tc.field, errs)
-				}
-			}
-		})
-	}
-}
-
-func TestValidateReplace(t *testing.T) {
-	cases := []struct {
-		name    string
-		req     model.ReplaceStudentRequest
-		wantErr bool
-	}{
-		{
-			name:    "valid",
-			req:     model.ReplaceStudentRequest{NIM: "2201001", Name: "Sari", Grade: 90, IsActive: true},
-			wantErr: false,
-		},
-		{
-			name:    "nim kosong",
-			req:     model.ReplaceStudentRequest{NIM: "", Name: "Sari", Grade: 90},
-			wantErr: true,
-		},
-		{
-			name:    "grade negatif",
-			req:     model.ReplaceStudentRequest{NIM: "2201001", Name: "Sari", Grade: -1},
-			wantErr: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			errs := ValidateReplace(tc.req)
-			if tc.wantErr && len(errs) == 0 {
-				t.Fatalf("harap ada error, tapi lolos validasi")
-			}
-			if !tc.wantErr && len(errs) != 0 {
-				t.Fatalf("tidak harap error, tapi dapat: %v", errs)
-			}
-		})
-	}
-}
-
 func TestApplyPatch(t *testing.T) {
 	initial := model.Student{
 		ID: 1, NIM: "2201001", Name: "Sari", Grade: 88.5, IsActive: true,
@@ -102,11 +16,8 @@ func TestApplyPatch(t *testing.T) {
 
 	t.Run("ubah is_active saja", func(t *testing.T) {
 		inactive := false
-		result, errs := ApplyPatch(initial, model.PatchStudentRequest{IsActive: &inactive})
+		result := ApplyPatch(initial, model.PatchStudentRequest{IsActive: &inactive})
 
-		if len(errs) != 0 {
-			t.Fatalf("tidak seharusnya ada error: %v", errs)
-		}
 		if result.IsActive {
 			t.Error("is_active seharusnya berubah menjadi false")
 		}
@@ -115,21 +26,19 @@ func TestApplyPatch(t *testing.T) {
 		}
 	})
 
-	t.Run("grade di luar rentang ditolak", func(t *testing.T) {
-		grade := 999.0
-		_, errs := ApplyPatch(initial, model.PatchStudentRequest{Grade: &grade})
+	t.Run("ubah beberapa field sekaligus", func(t *testing.T) {
+		nim := "2201099"
+		name := "Budi"
+		result := ApplyPatch(initial, model.PatchStudentRequest{NIM: &nim, Name: &name})
 
-		if _, ok := errs["grade"]; !ok {
-			t.Errorf("harap ada error pada field grade, dapat: %v", errs)
+		if result.NIM != "2201099" {
+			t.Error("nim seharusnya berubah")
 		}
-	})
-
-	t.Run("nim kosong ditolak", func(t *testing.T) {
-		empty := "   "
-		_, errs := ApplyPatch(initial, model.PatchStudentRequest{NIM: &empty})
-
-		if _, ok := errs["nim"]; !ok {
-			t.Errorf("harap ada error pada field nim, dapat: %v", errs)
+		if result.Name != "Budi" {
+			t.Error("name seharusnya berubah")
+		}
+		if result.Grade != 88.5 {
+			t.Error("grade yang tidak dikirim seharusnya tidak berubah")
 		}
 	})
 }

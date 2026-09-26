@@ -40,7 +40,7 @@ type WebResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
-	Meta    *Meta  `json:"meta,omitempty"`
+	Meta    any    `json:"meta,omitempty"`
 	Errors  any    `json:"errors,omitempty"`
 }
 
@@ -58,4 +58,23 @@ type ListQuery struct {
 	Sort     string
 	Order    string
 	IsActive *bool
+}
+
+// CursorQuery adalah parameter untuk pagination berbasis cursor.
+type CursorQuery struct {
+	Limit    int
+	After    *int // id terakhir dari halaman sebelumnya; nil = halaman pertama
+	Search   string
+	IsActive *bool
+}
+
+// CursorMeta menggantikan Meta pada endpoint yang memakai cursor.
+//
+// Perhatikan tidak adanya Total dan TotalPages. Keduanya tidak dapat
+// disediakan tanpa COUNT(*) atas seluruh tabel — persis biaya yang ingin
+// dihindari oleh pagination berbasis cursor.
+type CursorMeta struct {
+	Limit      int    `json:"limit"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
 }

@@ -18,6 +18,14 @@ func SuccessList(c *fiber.Ctx, message string, data any, meta *model.Meta) error
 	})
 }
 
+// SuccessCursor sama seperti SuccessList, tetapi untuk endpoint yang
+// memakai pagination berbasis cursor.
+func SuccessCursor(c *fiber.Ctx, message string, data any, meta *model.CursorMeta) error {
+	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
+		Success: true, Message: message, Data: data, Meta: meta,
+	})
+}
+
 // Created mengirim 201 sekaligus memasang header Location.
 func Created(c *fiber.Ctx, message string, data any, location string) error {
 	c.Set("Location", location)

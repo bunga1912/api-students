@@ -38,6 +38,9 @@ func Register(
 	students.Get("/",
 		middleware.RequirePermission(permissions, "student:list"),
 		studentService.List)
+	students.Get("/cursor",
+		middleware.RequirePermission(permissions, "student:list"),
+		studentService.ListCursor)
 	students.Post("/",
 		middleware.RequirePermission(permissions, "student:create"),
 		studentService.Create)

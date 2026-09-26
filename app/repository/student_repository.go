@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,7 @@ var (
 
 type StudentRepository interface {
 	FindAll(ctx context.Context, q StudentListFilter) ([]Student, int, error)
+	FindAfterCursor(ctx context.Context, f CursorFilter) ([]Student, error)
 	FindByID(ctx context.Context, id int) (Student, error)
 	Create(ctx context.Context, s Student) (Student, error)
 	Update(ctx context.Context, s Student) (Student, error)
@@ -36,6 +38,14 @@ type StudentListFilter struct {
 	Search   string
 	Sort     string
 	Order    string
+	IsActive *bool
+}
+
+// CursorFilter adalah parameter untuk FindAfterCursor.
+type CursorFilter struct {
+	Limit    int
+	After    *int // id terakhir dari halaman sebelumnya; nil = halaman pertama
+	Search   string
 	IsActive *bool
 }
 
@@ -87,6 +97,59 @@ func (r *postgresStudentRepository) FindAll(ctx context.Context, f StudentListFi
 	}
 
 	return hasil, total, nil
+}
+
+// FindAfterCursor mengambil satu halaman memakai keyset pagination.
+//
+// id sendirian sudah cukup sebagai cursor: ia primary key auto-increment,
+// sehingga terjamin unik dan monoton naik. Tidak dibutuhkan kolom kedua
+// sebagai pemecah seri karena tidak mungkin dua baris memiliki id yang
+// sama.
+//
+// Jumlah yang diminta sengaja limit+1. Baris tambahan itu tidak dikirim
+// ke client; keberadaannya hanya dipakai untuk menjawab "masih ada
+// halaman berikutnya?" tanpa perlu COUNT(*) atas seluruh tabel.
+func (r *postgresStudentRepository) FindAfterCursor(ctx context.Context, f CursorFilter) ([]Student, error) {
+	args := []any{}
+	where := " WHERE 1 = 1"
+
+	if f.Search != "" {
+		args = append(args, "%"+f.Search+"%")
+		where += fmt.Sprintf(" AND name ILIKE $%d", len(args))
+	}
+	if f.IsActive != nil {
+		args = append(args, *f.IsActive)
+		where += fmt.Sprintf(" AND is_active = $%d", len(args))
+	}
+	if f.After != nil {
+		args = append(args, *f.After)
+		where += fmt.Sprintf(" AND id < $%d", len(args))
+	}
+
+	args = append(args, f.Limit+1)
+	query := fmt.Sprintf(
+		"SELECT id, nim, name, grade, is_active, owner_id FROM students%s ORDER BY id DESC LIMIT $%d",
+		where, len(args))
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hasil []Student
+	for rows.Next() {
+		var s Student
+		if err := rows.Scan(&s.ID, &s.NIM, &s.Name, &s.Grade, &s.IsActive, &s.OwnerID); err != nil {
+			return nil, err
+		}
+		hasil = append(hasil, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return hasil, nil
 }
 
 func (r *postgresStudentRepository) FindByID(ctx context.Context, id int) (Student, error) {

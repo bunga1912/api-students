@@ -52,6 +52,44 @@ func (s *StudentService) List(c *fiber.Ctx) error {
 	})
 }
 
+// ListCursor mengambil daftar mahasiswa memakai keyset pagination.
+func (s *StudentService) ListCursor(c *fiber.Ctx) error {
+	q, err := helper.ParseCursorQuery(c)
+	if err != nil {
+		return err
+	}
+
+	filter := repository.CursorFilter{
+		Limit: q.Limit, After: q.After,
+		Search: q.Search, IsActive: q.IsActive,
+	}
+
+	rows, err := s.repo.FindAfterCursor(c.Context(), filter)
+	if err != nil {
+		return helper.ServiceUnavailable("database tidak dapat dijangkau")
+	}
+
+	// Baris tambahan hasil limit+1 dipotong di sini. Ia hanya penanda bahwa
+	// masih ada halaman berikutnya, bukan bagian dari halaman ini.
+	hasMore := len(rows) > q.Limit
+	if hasMore {
+		rows = rows[:q.Limit]
+	}
+
+	data := make([]model.Student, 0, len(rows))
+	for _, item := range rows {
+		data = append(data, toModel(item))
+	}
+
+	meta := &model.CursorMeta{Limit: q.Limit, HasMore: hasMore}
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		meta.NextCursor = helper.EncodeCursor(last.ID)
+	}
+
+	return helper.SuccessCursor(c, "daftar mahasiswa berhasil diambil", data, meta)
+}
+
 // Get memeriksa kepemilikan SETELAH data diambil, karena baru pada titik
 // itu owner_id-nya diketahui. Ini sebabnya pemeriksaan seperti ini tidak
 // bisa dipindah ke middleware: middleware belum pernah menyentuh database.
@@ -94,7 +132,7 @@ func (s *StudentService) Create(c *fiber.Ctx) error {
 	req.NIM = strings.TrimSpace(req.NIM)
 	req.Name = strings.TrimSpace(req.Name)
 
-	if errs := ValidateCreate(req); len(errs) > 0 {
+	if errs := helper.ValidateStruct(req); errs != nil {
 		return helper.Validation(errs)
 	}
 
@@ -149,7 +187,7 @@ func (s *StudentService) Replace(c *fiber.Ctx) error {
 	req.NIM = strings.TrimSpace(req.NIM)
 	req.Name = strings.TrimSpace(req.Name)
 
-	if errs := ValidateReplace(req); len(errs) > 0 {
+	if errs := helper.ValidateStruct(req); errs != nil {
 		return helper.Validation(errs)
 	}
 
@@ -201,10 +239,10 @@ func (s *StudentService) Patch(c *fiber.Ctx) error {
 		return helper.Forbidden("anda tidak memiliki hak untuk mengubah data ini")
 	}
 
-	updated, errs := ApplyPatch(toModel(existingRepo), req)
-	if len(errs) > 0 {
+	if errs := helper.ValidateStruct(req); errs != nil {
 		return helper.Validation(errs)
 	}
+	updated := ApplyPatch(toModel(existingRepo), req)
 
 	hasil, err := s.repo.Update(c.Context(), repository.Student{
 		ID: updated.ID, NIM: updated.NIM, Name: updated.Name,
