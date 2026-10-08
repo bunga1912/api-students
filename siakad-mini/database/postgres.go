@@ -6,43 +6,56 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"siakad-mini/config"
 )
 
-// NewPool membuat connection pool ke PostgreSQL dan memastikan koneksinya hidup.
-func NewPool(ctx context.Context) (*pgxpool.Pool, error) {
+type Config struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Name     string
+	SSLMode  string
+	MaxConns int32
+}
+
+func NewPool(
+	ctx context.Context,
+	cfg Config,
+) (*pgxpool.Pool, error) {
+
 	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		config.GetEnv("DB_USER", "postgres"),
-		config.GetEnv("DB_PASSWORD", ""),
-		config.GetEnv("DB_HOST", "localhost"),
-		config.GetEnv("DB_PORT", "5432"),
-		config.GetEnv("DB_NAME", "siakad_mini"),
-		config.GetEnv("DB_SSLMODE", "disable"),
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.Host,
+		cfg.Port,
+		cfg.User,
+		cfg.Password,
+		cfg.Name,
+		cfg.SSLMode,
 	)
 
-	cfg, err := pgxpool.ParseConfig(dsn)
+	poolConfig, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("konfigurasi database tidak valid: %w", err)
+		return nil, err
 	}
 
-	cfg.MaxConns = int32(config.GetEnvInt("DB_MAX_CONNS", 10))
-	cfg.MinConns = 2
-	cfg.MaxConnLifetime = time.Hour
-	cfg.MaxConnIdleTime = 30 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("gagal membuat pool: %w", err)
+	if cfg.MaxConns > 0 {
+		poolConfig.MaxConns = cfg.MaxConns
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	poolConfig.MaxConnLifetime = time.Hour
 
-	if err := pool.Ping(pingCtx); err != nil {
+	pool, err := pgxpool.NewWithConfig(
+		ctx,
+		poolConfig,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("gagal terhubung ke database: %w", err)
+		return nil, err
 	}
 
 	return pool, nil
