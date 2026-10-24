@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-
-	"siakad-mini/config"
 )
 
 type Claims struct {
@@ -20,20 +18,33 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(
+// JWT menyimpan secret dan masa berlaku token.
+// Dibuat sekali di main.go, tidak membaca env/config sendiri.
+type JWT struct {
+	secret []byte
+	ttl    time.Duration
+}
+
+func NewJWT(secret string, ttl time.Duration) (*JWT, error) {
+	if secret == "" {
+		return nil, errors.New("JWT_SECRET belum dikonfigurasi")
+	}
+
+	if ttl <= 0 {
+		return nil, errors.New("masa berlaku token harus lebih dari 0")
+	}
+
+	return &JWT{
+		secret: []byte(secret),
+		ttl:    ttl,
+	}, nil
+}
+
+func (j *JWT) Generate(
 	userID int64,
 	email string,
 	role string,
 ) (string, error) {
-
-	secret := config.GetEnv(
-		"JWT_SECRET",
-		"",
-	)
-
-	if secret == "" {
-		return "", errors.New("JWT_SECRET belum dikonfigurasi")
-	}
 
 	now := time.Now()
 
@@ -42,11 +53,9 @@ func GenerateJWT(
 		Email:  email,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:  strconv.FormatInt(userID, 10),
-			IssuedAt: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(
-				now.Add(24 * time.Hour),
-			),
+			Subject:   strconv.FormatInt(userID, 10),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(j.ttl)),
 		},
 	}
 
@@ -55,23 +64,10 @@ func GenerateJWT(
 		claims,
 	)
 
-	return token.SignedString(
-		[]byte(secret),
-	)
+	return token.SignedString(j.secret)
 }
 
-func ParseJWT(
-	tokenString string,
-) (*Claims, error) {
-
-	secret := config.GetEnv(
-		"JWT_SECRET",
-		"",
-	)
-
-	if secret == "" {
-		return nil, errors.New("JWT_SECRET belum dikonfigurasi")
-	}
+func (j *JWT) Parse(tokenString string) (*Claims, error) {
 
 	token, err := jwt.ParseWithClaims(
 		tokenString,
@@ -79,12 +75,10 @@ func ParseJWT(
 		func(token *jwt.Token) (interface{}, error) {
 
 			if token.Method != jwt.SigningMethodHS256 {
-				return nil, errors.New(
-					"algoritma JWT tidak valid",
-				)
+				return nil, errors.New("algoritma JWT tidak valid")
 			}
 
-			return []byte(secret), nil
+			return j.secret, nil
 		},
 	)
 
@@ -101,15 +95,9 @@ func ParseJWT(
 	return claims, nil
 }
 
-func ExtractBearerToken(
-	header string,
-) (string, error) {
+func ExtractBearerToken(header string) (string, error) {
 
-	parts := strings.SplitN(
-		header,
-		" ",
-		2,
-	)
+	parts := strings.SplitN(header, " ", 2)
 
 	if len(parts) != 2 ||
 		!strings.EqualFold(parts[0], "Bearer") {
@@ -120,9 +108,7 @@ func ExtractBearerToken(
 	}
 
 	if parts[1] == "" {
-		return "", errors.New(
-			"token tidak ditemukan",
-		)
+		return "", errors.New("token tidak ditemukan")
 	}
 
 	return parts[1], nil

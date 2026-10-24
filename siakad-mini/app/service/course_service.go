@@ -4,15 +4,14 @@ import (
 	"context"
 
 	"siakad-mini/app/model"
-	"siakad-mini/app/repository"
 )
 
 type CourseService struct {
-	courseRepo repository.CourseRepository
+	courseRepo model.CourseRepository
 }
 
 func NewCourseService(
-	courseRepo repository.CourseRepository,
+	courseRepo model.CourseRepository,
 ) *CourseService {
 	return &CourseService{
 		courseRepo: courseRepo,

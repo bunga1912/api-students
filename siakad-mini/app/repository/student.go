@@ -3,27 +3,23 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"siakad-mini/app/model"
 )
 
-type StudentRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.Student, error)
-	FindByUserID(ctx context.Context, userID int64) (*model.Student, error)
-	FindByNIM(ctx context.Context, nim string) (*model.Student, error)
-	List(ctx context.Context) ([]model.Student, error)
-	Create(ctx context.Context, student *model.Student) (*model.Student, error)
-	Update(ctx context.Context, student *model.Student) (*model.Student, error)
-	Delete(ctx context.Context, id int64) error
-}
+// likeEscaper meng-escape karakter khusus LIKE supaya input pencarian
+// diperlakukan sebagai teks biasa.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 type studentRepository struct {
 	db DBTX
 }
 
-func NewStudentRepository(db DBTX) StudentRepository {
+func NewStudentRepository(db DBTX) model.StudentRepository {
 	return &studentRepository{
 		db: db,
 	}
@@ -68,7 +64,7 @@ func (r *studentRepository) FindByID(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -116,7 +112,7 @@ func (r *studentRepository) FindByUserID(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -164,7 +160,7 @@ func (r *studentRepository) FindByNIM(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -173,12 +169,60 @@ func (r *studentRepository) FindByNIM(
 	return student, nil
 }
 
-func (r *studentRepository) List(
+func (r *studentRepository) ListPaged(
 	ctx context.Context,
-) ([]model.Student, error) {
+	f model.StudentFilter,
+) ([]model.Student, int, error) {
 
-	rows, err := r.db.Query(
+	where := []string{"deleted_at IS NULL"}
+	args := make([]interface{}, 0, 5)
+
+	if f.Prodi != "" {
+		args = append(args, f.Prodi)
+		where = append(where, fmt.Sprintf("LOWER(prodi) = LOWER($%d)", len(args)))
+	}
+
+	if f.Angkatan > 0 {
+		args = append(args, f.Angkatan)
+		where = append(where, fmt.Sprintf("angkatan = $%d", len(args)))
+	}
+
+	if f.Search != "" {
+		args = append(args, "%"+likeEscaper.Replace(f.Search)+"%")
+		where = append(where, fmt.Sprintf(
+			"(nim ILIKE $%[1]d OR nama ILIKE $%[1]d)",
+			len(args),
+		))
+	}
+
+	whereSQL := "WHERE " + strings.Join(where, " AND ")
+
+	var total int
+
+	err := r.db.QueryRow(
 		ctx,
+		"SELECT COUNT(*) FROM students "+whereSQL,
+		args...,
+	).Scan(&total)
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// orderBy hanya berasal dari konstanta di bawah (bukan input user),
+	// jadi aman disisipkan ke SQL.
+	orderBy := "nim"
+
+	switch f.Sort {
+	case model.StudentSortNama:
+		orderBy = "nama, id"
+	case model.StudentSortIPKDesc:
+		orderBy = "ipk_terakhir DESC, id"
+	}
+
+	args = append(args, f.PerPage, (f.Page-1)*f.PerPage)
+
+	query := fmt.Sprintf(
 		`
 		SELECT
 			id,
@@ -191,18 +235,24 @@ func (r *studentRepository) List(
 			deleted_at,
 			created_at
 		FROM students
-		WHERE deleted_at IS NULL
-		ORDER BY nim
+		%s
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d
 		`,
+		whereSQL,
+		orderBy,
+		len(args)-1,
+		len(args),
 	)
 
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	defer rows.Close()
 
-	students := make([]model.Student, 0)
+	students := make([]model.Student, 0, f.PerPage)
 
 	for rows.Next() {
 
@@ -221,17 +271,17 @@ func (r *studentRepository) List(
 		)
 
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		students = append(students, student)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return students, nil
+	return students, total, nil
 }
 
 func (r *studentRepository) Create(
@@ -283,6 +333,16 @@ func (r *studentRepository) Create(
 	)
 
 	if err != nil {
+		if constraint, ok := uniqueViolationConstraint(err); ok {
+			// Termasuk NIM milik mahasiswa yang sudah di-soft delete,
+			// karena constraint UNIQUE tetap berlaku untuk baris tersebut.
+			if strings.Contains(constraint, "nim") {
+				return nil, model.FieldError("nim", "NIM sudah terdaftar")
+			}
+
+			return nil, model.ErrAlreadyExists
+		}
+
 		return nil, err
 	}
 
@@ -337,7 +397,7 @@ func (r *studentRepository) Update(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -367,7 +427,7 @@ func (r *studentRepository) Delete(
 	}
 
 	if commandTag.RowsAffected() == 0 {
-		return ErrNotFound
+		return model.ErrNotFound
 	}
 
 	return nil

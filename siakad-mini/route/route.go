@@ -3,6 +3,7 @@ package route
 import (
 	"github.com/gofiber/fiber/v2"
 
+	"siakad-mini/app/model"
 	"siakad-mini/handler"
 	"siakad-mini/middleware"
 )
@@ -14,43 +15,36 @@ type Handlers struct {
 	Enrollment *handler.EnrollmentHandler
 }
 
-func Setup(app *fiber.App, h Handlers) {
-	api := app.Group("/api")
+// auth adalah middleware autentikasi (middleware.Auth) yang dibuat di main.go.
+func Setup(app *fiber.App, h Handlers, auth fiber.Handler) {
+	api := app.Group("/api/v1")
 
-	// ---------- Public ----------
+	admin := middleware.RequireRole(model.RoleAdmin)
+	mahasiswa := middleware.RequireRole(model.RoleMahasiswa)
+	mahasiswaOrAdmin := middleware.RequireRole(model.RoleAdmin, model.RoleMahasiswa)
+
+	// 1. Login (publik)
 	api.Post("/auth/login", h.Auth.Login)
 
-	// ---------- Authenticated ----------
-	authed := api.Group("", middleware.Auth())
+	// Semua route di bawah ini wajib token.
+	authed := api.Group("", auth)
 
+	// 2. Profil user yang sedang login
 	authed.Get("/auth/me", h.Auth.Me)
 
-	admin := middleware.RequireRole(middleware.RoleAdmin)
-	mahasiswaOrAdmin := middleware.RequireRole(middleware.RoleAdmin, middleware.RoleMahasiswa)
-
-	// Courses: baca untuk semua user login, tulis khusus admin
-	courses := authed.Group("/courses")
-	courses.Get("/", h.Course.List) // ?semester=
-	courses.Get("/code/:code", h.Course.GetByCode)
-	courses.Get("/:id", h.Course.GetByID)
-	courses.Post("/", admin, h.Course.Create)
-	courses.Put("/:id", admin, h.Course.Update)
-	courses.Delete("/:id", admin, h.Course.Delete)
-
-	// Students (rute statis "/me" & "/nim/:nim" didaftarkan sebelum "/:id")
+	// 3-7. Students
 	students := authed.Group("/students")
-	students.Get("/me", mahasiswaOrAdmin, h.Student.Me)
-	students.Get("/nim/:nim", admin, h.Student.GetByNIM)
 	students.Get("/", admin, h.Student.List)
-	students.Get("/:id", admin, h.Student.GetByID)
 	students.Post("/", admin, h.Student.Create)
+	students.Get("/:id", mahasiswaOrAdmin, h.Student.GetByID) // mahasiswa: data sendiri
 	students.Put("/:id", admin, h.Student.Update)
 	students.Delete("/:id", admin, h.Student.Delete)
 
-	// Enrollments (KRS)
+	// 8. Courses
+	authed.Get("/courses", h.Course.List)
+
+	// 9-10. Enrollments (KRS): khusus mahasiswa
 	enrollments := authed.Group("/enrollments")
-	enrollments.Post("/", mahasiswaOrAdmin, h.Enrollment.Create)
-	enrollments.Get("/", mahasiswaOrAdmin, h.Enrollment.List)
-	enrollments.Get("/total-sks", mahasiswaOrAdmin, h.Enrollment.TotalSKS)
-	enrollments.Delete("/:id", admin, h.Enrollment.Delete)
+	enrollments.Post("/", mahasiswa, h.Enrollment.Create)
+	enrollments.Delete("/:id", mahasiswa, h.Enrollment.Delete)
 }

@@ -3,28 +3,18 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"siakad-mini/app/model"
 )
 
-var (
-	ErrNotFound      = errors.New("data tidak ditemukan")
-	ErrAlreadyExists = errors.New("data sudah ada")
-)
-
-type UserRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.User, error)
-	FindByEmail(ctx context.Context, email string) (*model.User, error)
-	Create(ctx context.Context, user *model.User) (*model.User, error)
-}
-
 type userRepository struct {
 	db DBTX
 }
 
-func NewUserRepository(db DBTX) UserRepository {
+func NewUserRepository(db DBTX) model.UserRepository {
 	return &userRepository{
 		db: db,
 	}
@@ -60,7 +50,7 @@ func (r *userRepository) FindByID(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -69,6 +59,8 @@ func (r *userRepository) FindByID(
 	return user, nil
 }
 
+// FindByEmail dipakai untuk login. User yang mahasiswanya sudah di-soft delete
+// diperlakukan seperti tidak ada, sehingga tidak bisa login.
 func (r *userRepository) FindByEmail(
 	ctx context.Context,
 	email string,
@@ -80,13 +72,19 @@ func (r *userRepository) FindByEmail(
 		ctx,
 		`
 		SELECT
-			id,
-			email,
-			password,
-			role,
-			created_at
-		FROM users
-		WHERE LOWER(email) = LOWER($1)
+			u.id,
+			u.email,
+			u.password,
+			u.role,
+			u.created_at
+		FROM users u
+		WHERE LOWER(u.email) = LOWER($1)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM students s
+			WHERE s.user_id = u.id
+			  AND s.deleted_at IS NOT NULL
+		  )
 		`,
 		email,
 	).Scan(
@@ -99,7 +97,7 @@ func (r *userRepository) FindByEmail(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -143,6 +141,14 @@ func (r *userRepository) Create(
 	)
 
 	if err != nil {
+		if constraint, ok := uniqueViolationConstraint(err); ok {
+			if strings.Contains(constraint, "email") {
+				return nil, model.FieldError("email", "email sudah terdaftar")
+			}
+
+			return nil, model.ErrAlreadyExists
+		}
+
 		return nil, err
 	}
 

@@ -9,21 +9,11 @@ import (
 	"siakad-mini/app/model"
 )
 
-type CourseRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.Course, error)
-	FindByCode(ctx context.Context, kodeMK string) (*model.Course, error)
-	List(ctx context.Context) ([]model.Course, error)
-	ListBySemester(ctx context.Context, semester int) ([]model.Course, error)
-	Create(ctx context.Context, course *model.Course) (*model.Course, error)
-	Update(ctx context.Context, course *model.Course) (*model.Course, error)
-	Delete(ctx context.Context, id int64) error
-}
-
 type courseRepository struct {
 	db DBTX
 }
 
-func NewCourseRepository(db DBTX) CourseRepository {
+func NewCourseRepository(db DBTX) model.CourseRepository {
 	return &courseRepository{
 		db: db,
 	}
@@ -61,7 +51,7 @@ func (r *courseRepository) FindByID(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -102,7 +92,7 @@ func (r *courseRepository) FindByCode(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -263,6 +253,10 @@ func (r *courseRepository) Create(
 	)
 
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, model.ErrAlreadyExists
+		}
+
 		return nil, err
 	}
 
@@ -312,7 +306,11 @@ func (r *courseRepository) Update(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
+		}
+
+		if isUniqueViolation(err) {
+			return nil, model.ErrAlreadyExists
 		}
 
 		return nil, err
@@ -340,7 +338,7 @@ func (r *courseRepository) Delete(
 	}
 
 	if commandTag.RowsAffected() == 0 {
-		return ErrNotFound
+		return model.ErrNotFound
 	}
 
 	return nil

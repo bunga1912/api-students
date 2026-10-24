@@ -53,7 +53,17 @@ func (s *StudentService) List(c *fiber.Ctx) error {
 }
 
 // ListCursor mengambil daftar mahasiswa memakai keyset pagination.
+// ListCursor mengambil daftar mahasiswa memakai keyset pagination.
+//
+// Format dipilih SEBELUM query dijalankan. Bila client meminta format
+// yang tidak dapat kita hasilkan, tidak ada gunanya membebani database
+// untuk hasil yang akan dibuang.
 func (s *StudentService) ListCursor(c *fiber.Ctx) error {
+	format, err := helper.Negotiate(c, helper.FormatJSON, helper.FormatCSV)
+	if err != nil {
+		return err
+	}
+
 	q, err := helper.ParseCursorQuery(c)
 	if err != nil {
 		return err
@@ -79,6 +89,10 @@ func (s *StudentService) ListCursor(c *fiber.Ctx) error {
 	data := make([]model.Student, 0, len(rows))
 	for _, item := range rows {
 		data = append(data, toModel(item))
+	}
+
+	if format == helper.FormatCSV {
+		return helper.WriteStudentsCSV(c, data)
 	}
 
 	meta := &model.CursorMeta{Limit: q.Limit, HasMore: hasMore}

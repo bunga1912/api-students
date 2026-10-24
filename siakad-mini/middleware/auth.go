@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 
 	"siakad-mini/helper"
@@ -11,25 +9,28 @@ import (
 const (
 	CtxUserID = "user_id"
 	CtxRole   = "role"
-
-	RoleAdmin     = "admin"
-	RoleMahasiswa = "mahasiswa"
 )
 
+// abort mengirim error berformat seragam.
+// Tidak memakai package handler supaya tidak terjadi import melingkar.
+func abort(c *fiber.Ctx, status int, message string) error {
+	return c.Status(status).JSON(fiber.Map{
+		"success": false,
+		"message": message,
+	})
+}
+
 // Auth memvalidasi JWT dari header "Authorization: Bearer <token>".
-func Auth() fiber.Handler {
+func Auth(tokens *helper.JWT) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		parts := strings.SplitN(c.Get("Authorization"), " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			return c.Status(fiber.StatusUnauthorized).
-				JSON(fiber.Map{"error": "token tidak ditemukan"})
+		raw, err := helper.ExtractBearerToken(c.Get("Authorization"))
+		if err != nil {
+			return abort(c, fiber.StatusUnauthorized, "Token tidak ditemukan")
 		}
 
-		// ASUMSI: helper.ParseJWT mengembalikan claims berisi UserID (int64) & Role (string).
-		claims, err := helper.ParseJWT(parts[1])
+		claims, err := tokens.Parse(raw)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).
-				JSON(fiber.Map{"error": "token tidak valid"})
+			return abort(c, fiber.StatusUnauthorized, "Token tidak valid atau sudah kedaluwarsa")
 		}
 
 		c.Locals(CtxUserID, claims.UserID)
@@ -47,7 +48,6 @@ func RequireRole(roles ...string) fiber.Handler {
 				return c.Next()
 			}
 		}
-		return c.Status(fiber.StatusForbidden).
-			JSON(fiber.Map{"error": "akses ditolak"})
+		return abort(c, fiber.StatusForbidden, "Akses ditolak")
 	}
 }

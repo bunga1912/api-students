@@ -9,47 +9,11 @@ import (
 	"siakad-mini/app/model"
 )
 
-type EnrollmentRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.Enrollment, error)
-
-	FindByStudentCourseYear(
-		ctx context.Context,
-		studentID int64,
-		courseID int64,
-		tahunAkademik string,
-	) (*model.Enrollment, error)
-
-	ListByStudent(
-		ctx context.Context,
-		studentID int64,
-		tahunAkademik string,
-	) ([]model.EnrollmentDetail, error)
-
-	CountByCourse(
-		ctx context.Context,
-		courseID int64,
-		tahunAkademik string,
-	) (int, error)
-
-	GetTotalSKS(
-		ctx context.Context,
-		studentID int64,
-		tahunAkademik string,
-	) (int, error)
-
-	Create(
-		ctx context.Context,
-		enrollment *model.Enrollment,
-	) (*model.Enrollment, error)
-
-	Delete(ctx context.Context, id int64) error
-}
-
 type enrollmentRepository struct {
 	db DBTX
 }
 
-func NewEnrollmentRepository(db DBTX) EnrollmentRepository {
+func NewEnrollmentRepository(db DBTX) model.EnrollmentRepository {
 	return &enrollmentRepository{
 		db: db,
 	}
@@ -85,7 +49,7 @@ func (r *enrollmentRepository) FindByID(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -130,7 +94,7 @@ func (r *enrollmentRepository) FindByStudentCourseYear(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 
 		return nil, err
@@ -300,6 +264,12 @@ func (r *enrollmentRepository) Create(
 	)
 
 	if err != nil {
+		// Constraint enrollments_unik (student_id, course_id, tahun_akademik).
+		// Ini juga menutup race: dua request bersamaan tidak bisa sama-sama lolos.
+		if isUniqueViolation(err) {
+			return nil, model.ErrSudahDiambil
+		}
+
 		return nil, err
 	}
 
@@ -325,7 +295,7 @@ func (r *enrollmentRepository) Delete(
 	}
 
 	if commandTag.RowsAffected() == 0 {
-		return ErrNotFound
+		return model.ErrNotFound
 	}
 
 	return nil
