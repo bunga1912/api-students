@@ -1,11 +1,18 @@
 package route
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 
 	"siakad-mini/app/model"
 	"siakad-mini/handler"
 	"siakad-mini/middleware"
+)
+
+const (
+	loginMaxFailures = 5
+	loginWindow      = time.Minute
 )
 
 type Handlers struct {
@@ -23,8 +30,12 @@ func Setup(app *fiber.App, h Handlers, auth fiber.Handler) {
 	mahasiswa := middleware.RequireRole(model.RoleMahasiswa)
 	mahasiswaOrAdmin := middleware.RequireRole(model.RoleAdmin, model.RoleMahasiswa)
 
-	// 1. Login (publik)
-	api.Post("/auth/login", h.Auth.Login)
+	// 1. Login (publik, dibatasi rate limit)
+	api.Post(
+		"/auth/login",
+		middleware.LoginRateLimit(loginMaxFailures, loginWindow),
+		h.Auth.Login,
+	)
 
 	// Semua route di bawah ini wajib token.
 	authed := api.Group("", auth)

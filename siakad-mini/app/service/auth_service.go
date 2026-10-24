@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/mail"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -14,21 +15,43 @@ import (
 // pada implementasi JWT (helper) maupun config.
 type TokenIssuer interface {
 	Generate(userID int64, email, role string) (string, error)
+	TTL() time.Duration
 }
 
+// TokenTypeBearer adalah nilai token_type pada response login.
+const TokenTypeBearer = "Bearer"
+
 type AuthService struct {
-	userRepo model.UserRepository
-	tokens   TokenIssuer
+	userRepo    model.UserRepository
+	studentRepo model.StudentRepository
+	tokens      TokenIssuer
 }
 
 func NewAuthService(
 	userRepo model.UserRepository,
+	studentRepo model.StudentRepository,
 	tokens TokenIssuer,
 ) *AuthService {
 	return &AuthService{
-		userRepo: userRepo,
-		tokens:   tokens,
+		userRepo:    userRepo,
+		studentRepo: studentRepo,
+		tokens:      tokens,
 	}
+}
+
+// LoginResult adalah hasil login yang berhasil.
+type LoginResult struct {
+	AccessToken string
+	TokenType   string
+	ExpiresIn   int64 // detik
+	User        *model.User
+}
+
+// MeResult adalah profil user yang sedang login.
+// Student hanya terisi jika role-nya mahasiswa.
+type MeResult struct {
+	User    *model.User
+	Student *model.Student
 }
 
 func validateLogin(email, password string) error {
@@ -59,19 +82,19 @@ func (s *AuthService) Login(
 	ctx context.Context,
 	email string,
 	password string,
-) (string, *model.User, error) {
+) (*LoginResult, error) {
 
 	if err := validateLogin(email, password); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
-			return "", nil, model.ErrInvalidCredentials
+			return nil, model.ErrInvalidCredentials
 		}
 
-		return "", nil, err
+		return nil, err
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -80,7 +103,7 @@ func (s *AuthService) Login(
 	)
 
 	if err != nil {
-		return "", nil, model.ErrInvalidCredentials
+		return nil, model.ErrInvalidCredentials
 	}
 
 	token, err := s.tokens.Generate(
@@ -90,18 +113,28 @@ func (s *AuthService) Login(
 	)
 
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	user.Password = ""
 
-	return token, user, nil
+	return &LoginResult{
+		AccessToken: token,
+		TokenType:   TokenTypeBearer,
+		ExpiresIn:   int64(s.tokens.TTL() / time.Second),
+		User:        user,
+	}, nil
 }
 
+// GetMe mengembalikan profil user. Untuk role mahasiswa, data mahasiswanya
+// (nim, nama, prodi, angkatan) ikut disertakan.
+//
+// Mahasiswa yang sudah di-soft delete tidak boleh lagi memakai token lama,
+// sehingga dikembalikan ErrAccountInactive (401).
 func (s *AuthService) GetMe(
 	ctx context.Context,
 	userID int64,
-) (*model.User, error) {
+) (*MeResult, error) {
 
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -110,5 +143,22 @@ func (s *AuthService) GetMe(
 
 	user.Password = ""
 
-	return user, nil
+	result := &MeResult{User: user}
+
+	if user.Role != model.RoleMahasiswa {
+		return result, nil
+	}
+
+	student, err := s.studentRepo.FindByUserID(ctx, user.ID)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return nil, model.ErrAccountInactive
+		}
+
+		return nil, err
+	}
+
+	result.Student = student
+
+	return result, nil
 }

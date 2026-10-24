@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"strings"
+	"unicode/utf8"
 
 	"siakad-mini/app/model"
 )
@@ -32,6 +34,37 @@ func (s *CourseService) GetByCode(
 ) (*model.Course, error) {
 
 	return s.courseRepo.FindByCode(ctx, code)
+}
+
+// ListWithQuota mengembalikan mata kuliah beserta terisi dan sisa_kuota,
+// dengan filter semester, search, dan hanya yang masih tersedia.
+func (s *CourseService) ListWithQuota(
+	ctx context.Context,
+	f model.CourseFilter,
+) ([]model.CourseWithQuota, error) {
+
+	f.Search = strings.TrimSpace(f.Search)
+	f.TahunAkademik = strings.TrimSpace(f.TahunAkademik)
+
+	verr := model.NewValidationError()
+
+	if f.Semester < 0 {
+		verr.Add("semester", "minimal 1")
+	}
+
+	if utf8.RuneCountInString(f.Search) > 100 {
+		verr.Add("search", "maksimal 100 karakter")
+	}
+
+	if f.TahunAkademik != "" && !tahunAkademikPattern.MatchString(f.TahunAkademik) {
+		verr.Add("tahun_akademik", "format harus seperti 2026/2027-Ganjil")
+	}
+
+	if verr.HasErrors() {
+		return nil, verr
+	}
+
+	return s.courseRepo.ListWithQuota(ctx, f)
 }
 
 func (s *CourseService) List(

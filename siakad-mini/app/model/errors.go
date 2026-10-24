@@ -11,6 +11,10 @@ var (
 	// Auth
 	ErrInvalidCredentials = errors.New("email atau password salah")
 
+	// ErrAccountInactive: token masih berlaku tetapi akun mahasiswanya
+	// sudah di-soft delete.
+	ErrAccountInactive = errors.New("akun tidak aktif")
+
 	// KRS
 	ErrSudahDiambil = errors.New("mata kuliah sudah diambil pada tahun akademik tersebut")
 	ErrKuotaPenuh   = errors.New("kuota mata kuliah sudah penuh")

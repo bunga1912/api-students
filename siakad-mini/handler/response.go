@@ -69,7 +69,8 @@ func respondError(c *fiber.Ctx, err error) error {
 	case errors.Is(err, model.ErrNotFound):
 		status = fiber.StatusNotFound
 
-	case errors.Is(err, model.ErrInvalidCredentials):
+	case errors.Is(err, model.ErrInvalidCredentials),
+		errors.Is(err, model.ErrAccountInactive):
 		status = fiber.StatusUnauthorized
 
 	case errors.Is(err, model.ErrForbidden):

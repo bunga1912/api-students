@@ -113,3 +113,7 @@ func ExtractBearerToken(header string) (string, error) {
 
 	return parts[1], nil
 }
+// TTL mengembalikan masa berlaku token (dipakai untuk field expires_in).
+func (j *JWT) TTL() time.Duration {
+	return j.ttl
+}

@@ -73,7 +73,7 @@ func main() {
 	// SERVICE
 	// =========================
 
-	authService := service.NewAuthService(userRepo, tokens)
+	authService := service.NewAuthService(userRepo, studentRepo, tokens)
 	studentService := service.NewStudentService(studentRepo, enrollmentRepo, txManager)
 	courseService := service.NewCourseService(courseRepo)
 	enrollmentService := service.NewEnrollmentService(enrollmentRepo, txManager)
