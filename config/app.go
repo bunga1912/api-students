@@ -15,10 +15,15 @@ import (
 )
 
 func NewApp(
-	logger *slog.Logger, pool *pgxpool.Pool,
-	studentService *service.StudentService, nilaiService *service.NilaiService,
-	authService *service.AuthService, jwtManager *helper.JWTManager,
+	logger *slog.Logger,
+	pool *pgxpool.Pool,
+	studentService *service.StudentService,
+	nilaiService *service.NilaiService,
+	authService *service.AuthService,
+	jwtManager *helper.JWTManager,
 	permissions *helper.PermissionSet,
+	courseService *service.CourseService,
+	supervisorService *service.SupervisorService,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      GetEnv("APP_NAME", "Tugas Mandiri - API Students"),
@@ -27,7 +32,18 @@ func NewApp(
 	})
 
 	middleware.Register(app, logger)
-	route.Register(app, pool, studentService, nilaiService, authService, jwtManager, permissions)
+
+	route.Register(
+		app,
+		pool,
+		studentService,
+		nilaiService,
+		authService,
+		jwtManager,
+		permissions,
+		courseService,
+		supervisorService,
+	)
 
 	app.Use(func(c *fiber.Ctx) error {
 		return helper.NotFound("endpoint tidak ditemukan")
@@ -36,8 +52,8 @@ func NewApp(
 	return app
 }
 
-// newErrorHandler adalah SATU-SATUNYA tempat error berubah menjadi
-// response HTTP di seluruh aplikasi.
+// newErrorHandler adalah satu-satunya tempat error
+// diubah menjadi response HTTP di seluruh aplikasi.
 func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 	return func(c *fiber.Ctx, err error) error {
 		requestID := helper.RequestID(c)
@@ -46,7 +62,7 @@ func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 
 		switch {
 		case errors.As(err, &appErr):
-			// Kegagalan yang sudah kita rencanakan.
+			// Kegagalan yang sudah direncanakan.
 
 		case errors.Is(err, fiber.ErrRequestEntityTooLarge):
 			appErr = &helper.AppError{
@@ -57,9 +73,11 @@ func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 
 		default:
 			var fiberErr *fiber.Error
+
 			if errors.As(err, &fiberErr) {
 				appErr = &helper.AppError{
-					Status: fiberErr.Code, Code: "HTTP_ERROR",
+					Status:  fiberErr.Code,
+					Code:    "HTTP_ERROR",
 					Message: fiberErr.Message,
 				}
 			} else {
@@ -67,23 +85,23 @@ func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 			}
 		}
 
-		// Hanya kegagalan sisi server yang dicatat sebagai Error.
-		// Kegagalan 4xx adalah kesalahan pemakai API, bukan kerusakan
-		// sistem; mencatatnya sebagai Error membuat log penuh bising
-		// sehingga kerusakan yang sesungguhnya justru tenggelam.
 		if appErr.Status >= fiber.StatusInternalServerError {
-			logger.Error("request_failed",
+			logger.Error(
+				"request_failed",
 				slog.String("request_id", requestID),
 				slog.String("path", c.Path()),
 				slog.String("code", appErr.Code),
 				slog.Int("status", appErr.Status),
-				slog.String("error", appErr.Error()))
+				slog.String("error", appErr.Error()),
+			)
 		} else {
-			logger.Warn("request_rejected",
+			logger.Warn(
+				"request_rejected",
 				slog.String("request_id", requestID),
 				slog.String("path", c.Path()),
 				slog.String("code", appErr.Code),
-				slog.Int("status", appErr.Status))
+				slog.Int("status", appErr.Status),
+			)
 		}
 
 		return c.Status(appErr.Status).JSON(model.ErrorResponse{
