@@ -194,7 +194,7 @@ func (r *coursePostgresRepository) DecrementEnrolled(ctx context.Context, course
 // sesudahnya akan mengurangi jumlah peserta untuk pendaftaran yang
 // sebenarnya tidak pernah ada.
 func (r *coursePostgresRepository) DeleteEnrollment(ctx context.Context, courseID, userID int) error {
-	tag, err := r.db.Exec(ctx,
+		tag, err := r.db.Exec(ctx,
 		"DELETE FROM enrollments WHERE course_id = $1 AND user_id = $2", courseID, userID)
 	if err != nil {
 		return fmt.Errorf("menghapus pendaftaran: %w", err)

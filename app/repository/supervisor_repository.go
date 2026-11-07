@@ -151,7 +151,7 @@ func (r *supervisorPostgresRepository) LockSupervisors(ctx context.Context, ids 
 func (r *supervisorPostgresRepository) IncrementSupervised(ctx context.Context, supervisorID int) (model.Supervisor, error) {
 	s, err := scanSupervisor(r.db.QueryRow(ctx,
 		`UPDATE supervisors SET supervised_count = supervised_count + 1
-		 WHERE id = $1 AND supervised_count < quota
+		WHERE id = $1 AND supervised_count < quota
 		 RETURNING `+supervisorColumns, supervisorID))
 	if err == nil {
 		return s, nil
