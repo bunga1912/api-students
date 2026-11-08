@@ -10,23 +10,21 @@ import (
 	"api-students/app/service"
 	"api-students/helper"
 	"api-students/middleware"
+
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 func Register(
-	app *fiber.App,
-	pool *pgxpool.Pool,
-	studentService *service.StudentService,
-	nilaiService *service.NilaiService,
-	authService *service.AuthService,
-	jwtManager *helper.JWTManager,
-	permissions *helper.PermissionSet,
-	courseService *service.CourseService,
+	app *fiber.App, pool *pgxpool.Pool,
+	studentService *service.StudentService, nilaiService *service.NilaiService,
+	authService *service.AuthService, jwtManager *helper.JWTManager,
+	permissions *helper.PermissionSet, courseService *service.CourseService,
 	supervisorService *service.SupervisorService,
+	mongoClient *mongo.Client,
 ) {
 	api := app.Group("/api/v1")
 
-	// --- health check ---
-	api.Get("/health", healthCheck(pool))
+	api.Get("/health", healthCheck(pool, mongoClient))
 
 	// --- autentikasi ---
 	auth := api.Group("/auth", middleware.RequireJSON)
@@ -139,25 +137,17 @@ func Register(
 	)
 }
 
-func healthCheck(pool *pgxpool.Pool) fiber.Handler {
+func healthCheck(pool *pgxpool.Pool, mongoClient *mongo.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		ctx, cancel := context.WithTimeout(
-			c.UserContext(),
-			2*time.Second,
-		)
+		ctx, cancel := context.WithTimeout(c.UserContext(), 2*time.Second)
 		defer cancel()
 
 		if err := pool.Ping(ctx); err != nil {
-			return helper.ServiceUnavailable(
-				"database tidak dapat dihubungi",
-			)
+			return helper.ServiceUnavailable("PostgreSQL tidak dapat dihubungi")
 		}
-
-		return helper.Success(
-			c,
-			fiber.StatusOK,
-			"server dan database berjalan",
-			nil,
-		)
+		if err := mongoClient.Ping(ctx, nil); err != nil {
+			return helper.ServiceUnavailable("MongoDB tidak dapat dihubungi")
+		}
+		return helper.Success(c, fiber.StatusOK, "server, PostgreSQL, dan MongoDB berjalan", nil)
 	}
 }

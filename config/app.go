@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"api-students/app/model"
 	"api-students/app/service"
@@ -24,6 +25,7 @@ func NewApp(
 	permissions *helper.PermissionSet,
 	courseService *service.CourseService,
 	supervisorService *service.SupervisorService,
+	mongoClient *mongo.Client,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      GetEnv("APP_NAME", "Tugas Mandiri - API Students"),
@@ -43,6 +45,7 @@ func NewApp(
 		permissions,
 		courseService,
 		supervisorService,
+		mongoClient,
 	)
 
 	app.Use(func(c *fiber.Ctx) error {
