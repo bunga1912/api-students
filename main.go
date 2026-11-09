@@ -22,6 +22,7 @@ func main() {
 
 	// --- JWT ---
 	jwtSecret := config.GetEnv("JWT_SECRET", "")
+
 	if len(jwtSecret) < minSecretLength {
 		logger.Error(
 			"JWT_SECRET tidak diisi atau terlalu pendek",
@@ -30,7 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- Database ---
+	// --- PostgreSQL ---
 	pool, err := database.NewPostgresPool()
 	if err != nil {
 		logger.Error(
@@ -41,30 +42,49 @@ func main() {
 	}
 	defer pool.Close()
 
-	mongoClient, err := database.NewMongoClient(context.Background())
+	// --- MongoDB ---
+	mongoClient, err := database.NewMongoClient(
+		context.Background(),
+	)
 	if err != nil {
-		logger.Error("gagal terhubung ke MongoDB", slog.String("error", err.Error()))
+		logger.Error(
+			"gagal terhubung ke MongoDB",
+			slog.String("error", err.Error()),
+		)
 		os.Exit(1)
 	}
+
 	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
 		defer cancel()
+
 		_ = mongoClient.Disconnect(ctx)
 	}()
+
+	mongoDB := mongoClient.Database(
+		config.GetEnv("MONGO_DATABASE", "api_students"),
+	)
 
 	// --- JWT Manager ---
 	jwtManager := helper.NewJWTManager(
 		jwtSecret,
 		config.GetEnv("JWT_ISSUER", "api-students"),
 		time.Duration(
-			mustAtoi(config.GetEnv("JWT_ACCESS_TTL_MINUTES", "15")),
+			mustAtoi(
+				config.GetEnv("JWT_ACCESS_TTL_MINUTES", "15"),
+			),
 		)*time.Minute,
 	)
 
 	// --- Permissions ---
 	roleRepo := repository.NewRoleRepository(pool)
 
-	rawPermissions, err := roleRepo.LoadPermissions(context.Background())
+	rawPermissions, err := roleRepo.LoadPermissions(
+		context.Background(),
+	)
 	if err != nil {
 		logger.Error(
 			"gagal memuat permission",
@@ -74,6 +94,7 @@ func main() {
 	}
 
 	permissions := helper.NewPermissionSet(rawPermissions)
+
 	logger.Info(
 		"permission dimuat",
 		slog.Any("roles", permissions.KnownRoles()),
@@ -81,6 +102,7 @@ func main() {
 
 	// --- Students ---
 	studentRepo := repository.NewStudentRepository(pool)
+
 	studentService := service.NewStudentService(
 		studentRepo,
 		permissions,
@@ -88,7 +110,10 @@ func main() {
 
 	// --- Nilai ---
 	nilaiRepo := repository.NewNilaiRepository(pool)
-	nilaiService := service.NewNilaiService(nilaiRepo)
+
+	nilaiService := service.NewNilaiService(
+		nilaiRepo,
+	)
 
 	// --- Authentication ---
 	userRepo := repository.NewUserRepository(pool)
@@ -100,7 +125,9 @@ func main() {
 		jwtManager,
 		permissions,
 		time.Duration(
-			mustAtoi(config.GetEnv("JWT_REFRESH_TTL_DAYS", "7")),
+			mustAtoi(
+				config.GetEnv("JWT_REFRESH_TTL_DAYS", "7"),
+			),
 		)*24*time.Hour,
 	)
 
@@ -121,6 +148,60 @@ func main() {
 		txManager,
 	)
 
+	// --- Review ---
+	reviewRepository := repository.NewReviewRepository(
+		mongoDB,
+	)
+
+	if err := reviewRepository.EnsureIndexes(
+		context.Background(),
+	); err != nil {
+		logger.Error(
+			"gagal membuat index Review MongoDB",
+			slog.String("error", err.Error()),
+		)
+		os.Exit(1)
+	}
+
+	reviewService := service.NewReviewService(
+		reviewRepository,
+		courseRepository,
+		permissions,
+	)
+
+	// --- Portfolio ---
+
+	// Repository PostgreSQL untuk memeriksa mahasiswa.
+	studentLookup := repository.NewStudentLookup(pool)
+
+	// Repository MongoDB untuk portofolio.
+	portfolioRepository := repository.NewPortfolioRepository(
+		mongoDB,
+	)
+
+	// Membuat index portofolio.
+	indexCtx, cancelIndex := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+
+	err = portfolioRepository.EnsureIndexes(indexCtx)
+	cancelIndex()
+
+	if err != nil {
+		logger.Error(
+			"gagal membuat index Portfolio MongoDB",
+			slog.String("error", err.Error()),
+		)
+		os.Exit(1)
+	}
+
+	// Service portofolio.
+	portfolioService := service.NewPortfolioService(
+		portfolioRepository,
+		studentLookup,
+	)
+
 	// --- Application ---
 	app := config.NewApp(
 		logger,
@@ -132,6 +213,8 @@ func main() {
 		permissions,
 		courseService,
 		supervisorService,
+		reviewService,
+		portfolioService,
 		mongoClient,
 	)
 
@@ -153,6 +236,7 @@ func mustAtoi(s string) int {
 		if r < '0' || r > '9' {
 			return 15
 		}
+
 		n = n*10 + int(r-'0')
 	}
 

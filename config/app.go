@@ -25,6 +25,8 @@ func NewApp(
 	permissions *helper.PermissionSet,
 	courseService *service.CourseService,
 	supervisorService *service.SupervisorService,
+	reviewService *service.ReviewService,
+	portfolioService *service.PortfolioService,
 	mongoClient *mongo.Client,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
@@ -45,6 +47,8 @@ func NewApp(
 		permissions,
 		courseService,
 		supervisorService,
+		reviewService,
+		portfolioService,
 		mongoClient,
 	)
 

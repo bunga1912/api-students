@@ -1,0 +1,8 @@
+{
+  "title": {
+    "$ne": null
+  },
+  "technologies": ["golang", "mongodb"],
+  "url": "https://example.com/injection-test",
+  "year": 2026
+}
