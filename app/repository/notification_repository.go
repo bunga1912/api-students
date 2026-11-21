@@ -13,8 +13,9 @@ import (
 type NotificationRepository interface {
 	WithTx(tx DBTX) NotificationRepository
 
-	// Claim mencatat bahwa notifikasi untuk sebuah event akan dikirim.
-	// Mengembalikan false bila event itu sudah pernah tercatat.
+	// Claim mencatat bahwa notifikasi untuk sebuah event akan dikirim
+	// kepada seorang penerima. Mengembalikan false bila pasangan
+	// (event, penerima) itu sudah pernah tercatat.
 	Claim(ctx context.Context, n model.Notification) (bool, error)
 
 	FindByUser(ctx context.Context, userID, limit int) ([]model.Notification, error)
@@ -39,15 +40,18 @@ func (r *notificationPostgresRepository) WithTx(tx DBTX) NotificationRepository 
 // di-retry, padahal yang benar adalah "sudah dikirim, lewati saja".
 //
 // Dengan ON CONFLICT, bila worker lain sedang memegang baris dengan
-// outbox_id yang sama tetapi belum commit, pernyataan ini MENUNGGU sampai
-// worker itu selesai — lalu melewatinya bila worker itu commit, atau
-// melanjutkan bila worker itu rollback.
+// pasangan (outbox_id, user_id) yang sama tetapi belum commit, pernyataan
+// ini MENUNGGU sampai worker itu selesai — lalu melewatinya bila worker itu
+// commit, atau melanjutkan bila worker itu rollback.
+//
+// Sejak migration 009, kuncinya adalah pasangan (outbox_id, user_id):
+// satu event boleh menghasilkan satu notifikasi untuk SETIAP penerima.
 func (r *notificationPostgresRepository) Claim(ctx context.Context, n model.Notification) (bool, error) {
 	var id int64
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO notifications (outbox_id, user_id, channel, subject, body)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (outbox_id) DO NOTHING
+		ON CONFLICT (outbox_id, user_id) DO NOTHING
 		RETURNING id`,
 		n.OutboxID, n.UserID, n.Channel, n.Subject, n.Body).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {

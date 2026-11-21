@@ -52,6 +52,14 @@ func (w *NotificationWorker) HandleSend(ctx context.Context, t *asynq.Task) erro
 	if err := json.Unmarshal(t.Payload(), &job); err != nil {
 		return fmt.Errorf("%w: payload task rusak: %v", asynq.SkipRetry, err)
 	}
+
+	// Event yang ditujukan kepada banyak penerima ditangani terpisah.
+	// Percabangan ini HARUS berada sebelum payload dibaca sebagai
+	// EnrollmentEvent, karena payload kuota tidak memuat user_id.
+	if job.EventType == model.EventCourseQuotaChanged {
+		return w.handleQuotaChanged(ctx, job)
+	}
+
 	var event model.EnrollmentEvent
 	if err := json.Unmarshal(job.Payload, &event); err != nil {
 		return fmt.Errorf("%w: payload event %d rusak: %v", asynq.SkipRetry, job.OutboxID, err)
@@ -71,26 +79,7 @@ func (w *NotificationWorker) HandleSend(ctx context.Context, t *asynq.Task) erro
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
-	alreadySent := false
-	err = w.tx.WithTxOnce(ctx, func(tx repository.DBTX) error {
-		// Claim dan pengiriman berada di dalam SATU transaction:
-		//  - pengiriman gagal  -> claim ikut dibatalkan -> attempt
-		//    berikutnya masih dapat mengirim;
-		//  - pengiriman sukses -> claim di-commit -> attempt berikutnya
-		//    melihat claim ini dan tidak mengirim lagi.
-		claimed, err := w.notifications.WithTx(tx).Claim(ctx, model.Notification{
-			OutboxID: job.OutboxID, UserID: user.ID, Channel: "email",
-			Subject: msg.Subject, Body: msg.Body,
-		})
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			alreadySent = true
-			return nil
-		}
-		return w.mailer.Send(ctx, msg)
-	})
+	alreadySent, err := w.deliver(ctx, job.OutboxID, user, msg)
 	if errors.Is(err, helper.ErrPermanentDelivery) {
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
