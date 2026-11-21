@@ -1,3 +1,4 @@
+
 package config
 
 import (
@@ -28,6 +29,7 @@ func NewApp(
 	reviewService *service.ReviewService,
 	portfolioService *service.PortfolioService,
 	mongoClient *mongo.Client,
+	notificationService *service.NotificationService,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      GetEnv("APP_NAME", "Tugas Mandiri - API Students"),
@@ -50,6 +52,7 @@ func NewApp(
 		reviewService,
 		portfolioService,
 		mongoClient,
+		notificationService,
 	)
 
 	app.Use(func(c *fiber.Ctx) error {

@@ -26,6 +26,7 @@ func Register(
 	reviewService *service.ReviewService,
 	portfolioService *service.PortfolioService,
 	mongoClient *mongo.Client,
+	notificationService *service.NotificationService,
 ) {
 	api := app.Group("/api/v1")
 
@@ -207,6 +208,27 @@ func Register(
 	portfolios.Get(
 		"/stats/technologies",
 		portfolioService.TechnologyStats,
+	)
+
+	// --- notifikasi (diisi oleh worker, dibaca lewat API) ---
+	notifications := api.Group(
+		"/notifications",
+		middleware.RequireJSON,
+		middleware.RequireAuth(jwtManager),
+	)
+
+	notifications.Get("/mine", notificationService.Mine)
+
+	admin := api.Group(
+		"/admin",
+		middleware.RequireJSON,
+		middleware.RequireAuth(jwtManager),
+	)
+
+	admin.Get(
+		"/queue",
+		middleware.RequirePermission(permissions, "queue:monitor"),
+		notificationService.Monitor,
 	)
 }
 
