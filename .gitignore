@@ -18,3 +18,4 @@ Thumbs.db
 # Folder VS Code (opsional)
 .vscode/
 logs/
+.env.test

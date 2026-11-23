@@ -123,10 +123,12 @@ func (r *coursePostgresRepository) InsertEnrollment(ctx context.Context, courseI
 //
 // Tanpa FOR UPDATE, SELECT ini tidak mengunci apa pun dan pemeriksaan
 // batas SKS sesudahnya dapat diakali dengan request yang serentak.
+//
+// VERSI MUTASI T6 (SEMENTARA): " FOR UPDATE" sengaja dihapus dari query.
 func (r *coursePostgresRepository) LockStudent(ctx context.Context, userID int) error {
 	var id int
 	err := r.db.QueryRow(ctx,
-		"SELECT id FROM users WHERE id = $1 FOR UPDATE", userID).Scan(&id)
+		"SELECT id FROM users WHERE id = $1", userID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
