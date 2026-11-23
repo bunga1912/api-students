@@ -17,19 +17,30 @@ import (
 	"api-students/app/service"
 	"api-students/config"
 	"api-students/database"
+	_ "api-students/docs"
 	"api-students/helper"
 )
 
 const minSecretLength = 32
+
+// @title                       API KRS Praktikum Backend Lanjut
+// @version                     1.0
+// @description                 API pendaftaran kelas (KRS), ulasan kelas, dan notifikasi.
+// @description                 Seluruh endpoint selain /auth memerlukan access token.
+// @BasePath                    /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Isi dengan: Bearer <access_token>
 
 func main() {
 	config.LoadEnv()
 	logger := config.NewLogger()
 
 	// Satu program, tiga cara menjalankan:
-	//   go run . -role=api      hanya melayani HTTP
-	//   go run . -role=worker   hanya relay outbox dan worker queue
-	//   go run . -role=all      keduanya dalam satu proses
+	//   go run . -role=api
+	//   go run . -role=worker
+	//   go run . -role=all
 	role := flag.String("role", config.GetEnv("APP_ROLE", "all"), "api | worker | all")
 	flag.Parse()
 
@@ -40,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- PostgreSQL (dipakai API maupun worker) ---
+	// --- PostgreSQL ---
 	pool, err := database.NewPostgresPool()
 	if err != nil {
 		logger.Error("gagal terhubung ke database", slog.String("error", err.Error()))
@@ -48,7 +59,6 @@ func main() {
 	}
 	defer pool.Close()
 
-	// ctx dibatalkan ketika Ctrl+C ditekan atau sistem mengirim SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -71,8 +81,6 @@ func main() {
 	logger.Info("aplikasi berjalan", slog.String("role", *role))
 	<-ctx.Done()
 
-	// Urutan berhenti: pintu masuk ditutup lebih dulu (HTTP), baru kemudian
-	// pekerja di belakangnya.
 	if app != nil {
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 			logger.Error("shutdown HTTP tidak rapi", slog.String("error", err.Error()))
@@ -84,9 +92,6 @@ func main() {
 	logger.Info("aplikasi berhenti dengan rapi")
 }
 
-// startAPI menyiapkan seluruh kebutuhan HTTP. Mengembalikan nil bila gagal.
-// Isinya adalah main() lama milikmu, dipindahkan apa adanya, ditambah
-// outbox, notifikasi, dan inspector.
 func startAPI(logger *slog.Logger, pool *pgxpool.Pool) *fiber.App {
 	// --- JWT ---
 	jwtSecret := config.GetEnv("JWT_SECRET", "")
@@ -181,17 +186,18 @@ func startAPI(logger *slog.Logger, pool *pgxpool.Pool) *fiber.App {
 	}
 	portfolioService := service.NewPortfolioService(portfolioRepository, studentLookup)
 
-	// --- Notifikasi (BARU, Modul 11) ---
-	// Inspector hanya MEMBACA keadaan queue untuk endpoint admin. Ia tidak
-	// menghubungi Redis saat dibuat, sehingga API tetap dapat menyala
-	// walaupun Redis sedang mati.
+	// --- Notifikasi ---
 	inspector := asynq.NewInspector(config.RedisOpt())
 	notificationService := service.NewNotificationService(
-		notificationRepository, outboxRepository, inspector)
+		notificationRepository,
+		outboxRepository,
+		inspector,
+	)
+
+	// --- Swagger ---
+	enableSwagger := config.GetEnv("SWAGGER_ENABLED", "false") == "true"
 
 	// --- Application ---
-	// notificationService ditambahkan sebagai argumen TERAKHIR. Tanda tangan
-	// config.NewApp dan route harus ikut diperbarui (Langkah 10).
 	app := config.NewApp(
 		logger,
 		pool,
@@ -206,9 +212,9 @@ func startAPI(logger *slog.Logger, pool *pgxpool.Pool) *fiber.App {
 		portfolioService,
 		mongoClient,
 		notificationService,
+		enableSwagger,
 	)
 
-	// Sumber daya milik API ditutup setelah server HTTP berhenti.
 	app.Hooks().OnShutdown(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

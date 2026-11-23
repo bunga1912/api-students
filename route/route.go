@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/swagger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
@@ -27,7 +28,13 @@ func Register(
 	portfolioService *service.PortfolioService,
 	mongoClient *mongo.Client,
 	notificationService *service.NotificationService,
+	enableSwagger bool,
 ) {
+	// --- Swagger UI ---
+	if enableSwagger {
+		app.Get("/swagger/*", swagger.HandlerDefault)
+	}
+
 	api := app.Group("/api/v1")
 
 	api.Get("/health", healthCheck(pool, mongoClient))
@@ -81,13 +88,11 @@ func Register(
 
 	// --- Portfolio mahasiswa (C.2) ---
 
-	// GET: membaca portofolio mahasiswa.
 	students.Get(
 		"/:id/portfolio",
 		portfolioService.Get,
 	)
 
-	// PUT: membuat atau mengganti seluruh portofolio.
 	students.Put(
 		"/:id/portfolio",
 		middleware.RequirePermission(
@@ -97,7 +102,6 @@ func Register(
 		portfolioService.Put,
 	)
 
-	// POST: menambahkan satu proyek dengan $push.
 	students.Post(
 		"/:id/portfolio/projects",
 		middleware.RequirePermission(
@@ -107,7 +111,6 @@ func Register(
 		portfolioService.AddProject,
 	)
 
-	// DELETE: menghapus proyek dengan $pull.
 	students.Delete(
 		"/:id/portfolio/projects/:projectId",
 		middleware.RequirePermission(
@@ -210,7 +213,7 @@ func Register(
 		portfolioService.TechnologyStats,
 	)
 
-	// --- notifikasi (diisi oleh worker, dibaca lewat API) ---
+	// --- notifikasi ---
 	notifications := api.Group(
 		"/notifications",
 		middleware.RequireJSON,
@@ -219,6 +222,7 @@ func Register(
 
 	notifications.Get("/mine", notificationService.Mine)
 
+	// --- admin ---
 	admin := api.Group(
 		"/admin",
 		middleware.RequireJSON,

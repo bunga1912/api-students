@@ -30,6 +30,7 @@ const (
 	studentA      = 7
 	studentB      = 8
 )
+
 type testEnv struct {
 	app *fiber.App
 	jwt *helper.JWTManager
@@ -67,9 +68,10 @@ func newTestEnv(t *testing.T) testEnv {
 		nil, // courseService
 		nil, // supervisorService
 		service.NewReviewService(reviews, courses, perms),
-		nil, // portfolioService
-		nil, // mongoClient
-		nil, // notificationService
+		nil,   // portfolioService
+		nil,   // mongoClient
+		nil,   // notificationService
+		false, // enableSwagger
 	)
 
 	return testEnv{app: app, jwt: jwtManager}
@@ -81,10 +83,10 @@ func (e testEnv) do(t *testing.T, userID int, method, path, body string) (int, m
 	t.Helper()
 
 	token, err := e.jwt.GenerateAccess(model.User{
-	ID:       userID,
-	Username: "mhs" + strconv.Itoa(userID),
-	Role:     "user",
-})
+		ID:       userID,
+		Username: "mhs" + strconv.Itoa(userID),
+		Role:     "user",
+	})
 
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
